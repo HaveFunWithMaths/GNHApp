@@ -1,0 +1,85 @@
+export type MealType = 'breakfast' | 'lunch' | 'dinner';
+
+export type ExpenseType = 'REGULAR' | 'JANMASHTAMI';
+export type ExpenseStatus = 'APPROVED' | 'REJECTED';
+export type SettlementState = 'UNSETTLED' | 'PENDING_VERIFICATION' | 'SETTLED';
+
+export interface FamilyMember {
+  name: string;
+  phone_number?: string; // Optional: 10-digit mobile or empty/blank
+}
+
+export interface Devotee {
+  id: string;
+  phone_number: string;
+  group_name: string;
+  family_members: (string | FamilyMember)[];
+  is_admin?: boolean;
+  created_at?: string;
+}
+
+export interface PrasadamCount {
+  id?: string;
+  devotee_id: string;
+  date: string; // 'YYYY-MM-DD'
+  breakfast_count: number;
+  lunch_count: number;
+  dinner_count: number;
+  is_auto_filled: boolean;
+  updated_at?: string;
+}
+
+export interface Expense {
+  id: string;
+  devotee_id: string | null;
+  guest_name?: string | null;
+  type: ExpenseType;
+  payer_name: string;
+  title: string;
+  amount: number;
+  comments?: string | null;
+  bill_url?: string | null;
+  status: ExpenseStatus;
+  rejection_reason?: string | null;
+  cycle_month: string; // 'YYYY-MM'
+  created_at: string;
+}
+
+export interface MonthlyLedger {
+  id?: string;
+  devotee_id: string;
+  cycle_month: string; // 'YYYY-MM'
+  carried_forward_amount: number;
+  settlement_amount_reported: number;
+  settlement_date_reported: string | null;
+  settlement_status: SettlementState;
+  admin_notes?: string | null;
+}
+
+export interface SystemConfig {
+  key: string;
+  value: string;
+}
+
+export interface DevoteeMonthlySummary {
+  devotee: Devotee;
+  cycle_month: string;
+  breakfast_total: number;
+  lunch_total: number;
+  dinner_total: number;
+  total_meals: number;
+  prasadam_cost: number;
+  approved_expenses: number;
+  rejected_expenses: number;
+  current_month_net: number; // Prasadam Cost - Approved Expenses
+  carried_forward: number;
+  settlement_reported: number;
+  settlement_status: SettlementState;
+  settlement_date_reported: string | null;
+  final_balance: number; // Current Month Net + Carried Forward - Settlement Reported
+  unfilled_days: number;
+  is_locked: boolean;
+  janmashtami_expenses: number;
+}
+
+export type ActiveTab = 'reports' | 'prasadam' | 'janmashtami' | 'admin';

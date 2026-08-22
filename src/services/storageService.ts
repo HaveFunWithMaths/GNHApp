@@ -1,0 +1,758 @@
+import { Devotee, PrasadamCount, Expense, MonthlyLedger } from '../types';
+import { INITIAL_DEVOTEES } from '../data/seedDevotees';
+import { supabase, isSupabaseConfigured } from './supabase';
+import { getCurrentCycleMonth, calculateDevoteeMaxCounts, getAllDatesInMonth } from '../utils/calculations';
+import { normalizeFamilyMembers } from '../utils/devoteeHelpers';
+import { fileToBase64 } from '../utils/imageCompressor';
+
+// Storage keys
+const STORAGE_KEYS = {
+  DEVOTEES: 'gnh_devotees',
+  PRASADAM_COUNTS: 'gnh_prasadam_counts',
+  EXPENSES: 'gnh_expenses',
+  MONTHLY_LEDGERS: 'gnh_monthly_ledgers',
+  SYSTEM_CONFIG: 'gnh_system_config',
+  ACTIVE_DEVOTEE_PHONE: 'gnh_active_phone',
+  ACTIVE_GUEST_NAME: 'gnh_active_guest',
+  ADMIN_AUTH: 'gnh_admin_auth',
+  ACTIVE_MONTH: 'gnh_active_month',
+};
+
+// Initial Seed System Config
+const DEFAULT_CONFIG: Record<string, string> = {
+  admin_pin_hash: '192108',
+  breakfast_rate: '40',
+  lunch_rate: '80',
+  dinner_rate: '40',
+};
+
+// Generate sample starting data for current month to ensure rich initial state
+function generateInitialSampleData() {
+  const currentMonth = getCurrentCycleMonth();
+  const [yearStr, monthStr] = currentMonth.split('-');
+  const counts: PrasadamCount[] = [];
+  const expenses: Expense[] = [];
+  const ledgers: MonthlyLedger[] = [];
+
+  // Seed some realistic counts for first 15 days of current month for top 12 devotees
+  for (let d = 1; d <= 15; d++) {
+    const dayStr = d.toString().padStart(2, '0');
+    const date = `${yearStr}-${monthStr}-${dayStr}`;
+
+    INITIAL_DEVOTEES.slice(0, 12).forEach((devotee, index) => {
+      // Deterministic realistic counts
+      const b = (d + index) % 3 === 0 ? 0 : (index % 2 === 0 ? 2 : 1);
+      const l = (d + index) % 4 === 0 ? 0 : (index % 2 === 0 ? 2 : 1);
+      const dCount = (d + index) % 5 === 0 ? 0 : 2;
+
+      counts.push({
+        id: `cnt-${devotee.id}-${date}`,
+        devotee_id: devotee.id,
+        date,
+        breakfast_count: b,
+        lunch_count: l,
+        dinner_count: dCount,
+        is_auto_filled: false,
+        updated_at: new Date().toISOString(),
+      });
+    });
+  }
+
+  // Seed sample regular expenses
+  expenses.push(
+    {
+      id: 'exp-001',
+      devotee_id: INITIAL_DEVOTEES[0].id,
+      type: 'REGULAR',
+      payer_name: 'Ram Das',
+      title: 'Vegetables & Herbs for Sunday Feast',
+      amount: 1450,
+      comments: 'Procured from Wholesale APMC Mandi',
+      status: 'APPROVED',
+      cycle_month: currentMonth,
+      created_at: new Date(Date.now() - 5 * 86400000).toISOString(),
+    },
+    {
+      id: 'exp-002',
+      devotee_id: INITIAL_DEVOTEES[1].id,
+      type: 'REGULAR',
+      payer_name: 'Govinda Das',
+      title: 'Pure Desi Ghee 5 Liters',
+      amount: 3200,
+      comments: 'For temple cooking and sweets',
+      status: 'APPROVED',
+      cycle_month: currentMonth,
+      created_at: new Date(Date.now() - 3 * 86400000).toISOString(),
+    },
+    {
+      id: 'exp-003',
+      devotee_id: INITIAL_DEVOTEES[2].id,
+      type: 'REGULAR',
+      payer_name: 'Madhava Das',
+      title: 'Cleaning Supplies & Detergents',
+      amount: 450,
+      comments: 'Kitchen sanitation supplies',
+      status: 'APPROVED',
+      cycle_month: currentMonth,
+      created_at: new Date(Date.now() - 1 * 86400000).toISOString(),
+    },
+    // Seed Janmashtami Festival Expenses
+    {
+      id: 'exp-j-001',
+      devotee_id: INITIAL_DEVOTEES[0].id,
+      type: 'JANMASHTAMI',
+      payer_name: 'Ram Das',
+      title: 'Janmashtami Flower Garland & Stage Decor',
+      amount: 8500,
+      comments: 'Marigold & Jasmine garlands for altar',
+      status: 'APPROVED',
+      cycle_month: currentMonth,
+      created_at: new Date(Date.now() - 7 * 86400000).toISOString(),
+    },
+    {
+      id: 'exp-j-002',
+      devotee_id: INITIAL_DEVOTEES[3].id,
+      type: 'JANMASHTAMI',
+      payer_name: 'Mukunda Das',
+      title: 'Janmashtami 108 Bhoga Special Ingredients',
+      amount: 12400,
+      comments: 'Dry fruits, saffron, paneer, and mawa',
+      status: 'APPROVED',
+      cycle_month: currentMonth,
+      created_at: new Date(Date.now() - 4 * 86400000).toISOString(),
+    }
+  );
+
+  // Seed sample ledgers with previous carried forward amounts
+  INITIAL_DEVOTEES.forEach((devotee, index) => {
+    ledgers.push({
+      id: `ledg-${devotee.id}-${currentMonth}`,
+      devotee_id: devotee.id,
+      cycle_month: currentMonth,
+      carried_forward_amount: index === 1 ? -450 : index === 4 ? 600 : 0,
+      settlement_amount_reported: 0,
+      settlement_date_reported: null,
+      settlement_status: 'UNSETTLED',
+      admin_notes: '',
+    });
+  });
+
+  return { counts, expenses, ledgers };
+}
+
+class StorageService {
+  private initialized = false;
+
+  constructor() {
+    this.init();
+  }
+
+  private init() {
+    if (this.initialized) return;
+
+    // Check if localStorage has devotees; if not, populate seed
+    const existingDevotees = localStorage.getItem(STORAGE_KEYS.DEVOTEES);
+    if (!existingDevotees) {
+      localStorage.setItem(STORAGE_KEYS.DEVOTEES, JSON.stringify(INITIAL_DEVOTEES));
+    }
+
+    const existingConfig = localStorage.getItem(STORAGE_KEYS.SYSTEM_CONFIG);
+    if (!existingConfig) {
+      localStorage.setItem(STORAGE_KEYS.SYSTEM_CONFIG, JSON.stringify(DEFAULT_CONFIG));
+    }
+
+    const existingCounts = localStorage.getItem(STORAGE_KEYS.PRASADAM_COUNTS);
+    const existingExpenses = localStorage.getItem(STORAGE_KEYS.EXPENSES);
+    const existingLedgers = localStorage.getItem(STORAGE_KEYS.MONTHLY_LEDGERS);
+
+    if (!existingCounts || !existingExpenses || !existingLedgers) {
+      const sample = generateInitialSampleData();
+      if (!existingCounts) localStorage.setItem(STORAGE_KEYS.PRASADAM_COUNTS, JSON.stringify(sample.counts));
+      if (!existingExpenses) localStorage.setItem(STORAGE_KEYS.EXPENSES, JSON.stringify(sample.expenses));
+      if (!existingLedgers) localStorage.setItem(STORAGE_KEYS.MONTHLY_LEDGERS, JSON.stringify(sample.ledgers));
+    }
+
+    this.initialized = true;
+  }
+
+  // --- DEVOTEES ---
+  async getDevotees(): Promise<Devotee[]> {
+    if (isSupabaseConfigured() && supabase) {
+      try {
+        const { data, error } = await supabase.from('devotees').select('*').order('group_name');
+        if (!error && data && data.length > 0) {
+          localStorage.setItem(STORAGE_KEYS.DEVOTEES, JSON.stringify(data));
+          return data as Devotee[];
+        }
+      } catch (err) {
+        console.warn('Supabase getDevotees failed, using localStorage fallback', err);
+      }
+    }
+
+    const local = localStorage.getItem(STORAGE_KEYS.DEVOTEES);
+    const parsed: Devotee[] = local ? JSON.parse(local) : INITIAL_DEVOTEES;
+    return parsed.map(d => ({
+      ...d,
+      family_members: normalizeFamilyMembers(d),
+    }));
+  }
+
+  async saveDevotee(devotee: Devotee): Promise<Devotee> {
+    const devotees = await this.getDevotees();
+    const index = devotees.findIndex(d => d.id === devotee.id || d.phone_number === devotee.phone_number);
+    let updated: Devotee[];
+
+    if (index >= 0) {
+      updated = [...devotees];
+      updated[index] = { ...updated[index], ...devotee };
+    } else {
+      const newDevotee = {
+        ...devotee,
+        id: devotee.id || `d-${Date.now()}`,
+        created_at: new Date().toISOString(),
+      };
+      updated = [...devotees, newDevotee];
+    }
+
+    localStorage.setItem(STORAGE_KEYS.DEVOTEES, JSON.stringify(updated));
+
+    if (isSupabaseConfigured() && supabase) {
+      try {
+        await supabase.from('devotees').upsert(devotee);
+      } catch (err) {
+        console.warn('Supabase saveDevotee sync error', err);
+      }
+    }
+
+    this.notifySubscribers();
+    return devotee;
+  }
+
+  // --- PRASADAM COUNTS ---
+  async getPrasadamCounts(cycleMonth?: string): Promise<PrasadamCount[]> {
+    if (isSupabaseConfigured() && supabase) {
+      try {
+        let query = supabase.from('prasadam_counts').select('*');
+        if (cycleMonth) {
+          query = query.gte('date', `${cycleMonth}-01`).lte('date', `${cycleMonth}-31`);
+        }
+        const { data, error } = await query;
+        if (!error && data) {
+          return data as PrasadamCount[];
+        }
+      } catch (err) {
+        console.warn('Supabase getPrasadamCounts failed, using localStorage fallback', err);
+      }
+    }
+
+    const raw = localStorage.getItem(STORAGE_KEYS.PRASADAM_COUNTS);
+    const counts: PrasadamCount[] = raw ? JSON.parse(raw) : [];
+    if (cycleMonth) {
+      return counts.filter(c => c.date.startsWith(cycleMonth));
+    }
+    return counts;
+  }
+
+  async savePrasadamCount(count: PrasadamCount): Promise<PrasadamCount> {
+    const allCounts = await this.getPrasadamCounts();
+    const key = `${count.devotee_id}_${count.date}`;
+    const index = allCounts.findIndex(c => `${c.devotee_id}_${c.date}` === key);
+
+    const record: PrasadamCount = {
+      ...count,
+      id: count.id || `cnt-${count.devotee_id}-${count.date}`,
+      updated_at: new Date().toISOString(),
+    };
+
+    let updated: PrasadamCount[];
+    if (index >= 0) {
+      updated = [...allCounts];
+      updated[index] = record;
+    } else {
+      updated = [...allCounts, record];
+    }
+
+    localStorage.setItem(STORAGE_KEYS.PRASADAM_COUNTS, JSON.stringify(updated));
+
+    if (isSupabaseConfigured() && supabase) {
+      try {
+        await supabase.from('prasadam_counts').upsert({
+          devotee_id: record.devotee_id,
+          date: record.date,
+          breakfast_count: record.breakfast_count,
+          lunch_count: record.lunch_count,
+          dinner_count: record.dinner_count,
+          is_auto_filled: record.is_auto_filled,
+          updated_at: record.updated_at,
+        });
+      } catch (err) {
+        console.warn('Supabase savePrasadamCount error', err);
+      }
+    }
+
+    this.notifySubscribers();
+    return record;
+  }
+
+  async batchSavePrasadamCounts(counts: PrasadamCount[]): Promise<void> {
+    const allCounts = await this.getPrasadamCounts();
+    const countMap = new Map(allCounts.map(c => [`${c.devotee_id}_${c.date}`, c]));
+
+    counts.forEach(c => {
+      countMap.set(`${c.devotee_id}_${c.date}`, {
+        ...c,
+        id: c.id || `cnt-${c.devotee_id}-${c.date}`,
+        updated_at: new Date().toISOString(),
+      });
+    });
+
+    const updated = Array.from(countMap.values());
+    localStorage.setItem(STORAGE_KEYS.PRASADAM_COUNTS, JSON.stringify(updated));
+
+    if (isSupabaseConfigured() && supabase) {
+      try {
+        const payload = counts.map(c => ({
+          devotee_id: c.devotee_id,
+          date: c.date,
+          breakfast_count: c.breakfast_count,
+          lunch_count: c.lunch_count,
+          dinner_count: c.dinner_count,
+          is_auto_filled: c.is_auto_filled,
+          updated_at: new Date().toISOString(),
+        }));
+        await supabase.from('prasadam_counts').upsert(payload);
+      } catch (err) {
+        console.warn('Supabase batchSavePrasadamCounts error', err);
+      }
+    }
+
+    this.notifySubscribers();
+  }
+
+  /**
+   * Directly save monthly aggregate meal counts by distributing evenly across the month's days
+   */
+  async saveMonthlyPrasadamCounts(
+    devoteeId: string,
+    cycleMonth: string,
+    totalB: number,
+    totalL: number,
+    totalD: number
+  ): Promise<void> {
+    const monthDates = getAllDatesInMonth(cycleMonth);
+    const numDays = monthDates.length;
+    const clampedB = Math.max(0, Math.round(totalB));
+    const clampedL = Math.max(0, Math.round(totalL));
+    const clampedD = Math.max(0, Math.round(totalD));
+
+    const records: PrasadamCount[] = monthDates.map((dateStr, i) => {
+      const b = Math.floor(clampedB / numDays) + (i < (clampedB % numDays) ? 1 : 0);
+      const l = Math.floor(clampedL / numDays) + (i < (clampedL % numDays) ? 1 : 0);
+      const d = Math.floor(clampedD / numDays) + (i < (clampedD % numDays) ? 1 : 0);
+
+      return {
+        id: `cnt-${devoteeId}-${dateStr}`,
+        devotee_id: devoteeId,
+        date: dateStr,
+        breakfast_count: b,
+        lunch_count: l,
+        dinner_count: d,
+        is_auto_filled: false,
+        updated_at: new Date().toISOString(),
+      };
+    });
+
+    await this.batchSavePrasadamCounts(records);
+  }
+
+  /**
+   * Auto-fill unentered days in the active month with max entered slot counts
+   */
+  async autoFillMissingCounts(cycleMonth: string, targetDevoteeId?: string): Promise<number> {
+    const devotees = await this.getDevotees();
+    const allCounts = await this.getPrasadamCounts(cycleMonth);
+    const monthDates = getAllDatesInMonth(cycleMonth);
+
+    const targetDevotees = targetDevoteeId
+      ? devotees.filter(d => d.id === targetDevoteeId)
+      : devotees;
+
+    const newCountsToSave: PrasadamCount[] = [];
+
+    targetDevotees.forEach(devotee => {
+      const devoteeCounts = allCounts.filter(c => c.devotee_id === devotee.id);
+      const existingDateMap = new Map(devoteeCounts.map(c => [c.date, c]));
+      const { maxB, maxL, maxD } = calculateDevoteeMaxCounts(devoteeCounts);
+
+      monthDates.forEach(dateStr => {
+        const existing = existingDateMap.get(dateStr);
+        // If completely missing or 0 counts across all slots and not yet auto-filled
+        if (!existing || (existing.breakfast_count === 0 && existing.lunch_count === 0 && existing.dinner_count === 0 && !existing.is_auto_filled)) {
+          newCountsToSave.push({
+            id: existing?.id || `cnt-${devotee.id}-${dateStr}`,
+            devotee_id: devotee.id,
+            date: dateStr,
+            breakfast_count: maxB,
+            lunch_count: maxL,
+            dinner_count: maxD,
+            is_auto_filled: true,
+            updated_at: new Date().toISOString(),
+          });
+        }
+      });
+    });
+
+    if (newCountsToSave.length > 0) {
+      await this.batchSavePrasadamCounts(newCountsToSave);
+    }
+
+    return newCountsToSave.length;
+  }
+
+  // --- EXPENSES ---
+  async getExpenses(cycleMonth?: string): Promise<Expense[]> {
+    if (isSupabaseConfigured() && supabase) {
+      try {
+        let query = supabase.from('expenses').select('*').order('created_at', { ascending: false });
+        if (cycleMonth) {
+          query = query.or(`cycle_month.eq.${cycleMonth},type.eq.JANMASHTAMI`);
+        }
+        const { data, error } = await query;
+        if (!error && data) {
+          return data as Expense[];
+        }
+      } catch (err) {
+        console.warn('Supabase getExpenses failed, fallback to local', err);
+      }
+    }
+
+    const raw = localStorage.getItem(STORAGE_KEYS.EXPENSES);
+    const expenses: Expense[] = raw ? JSON.parse(raw) : [];
+    if (cycleMonth) {
+      return expenses.filter(e => e.cycle_month === cycleMonth || e.type === 'JANMASHTAMI');
+    }
+    return expenses;
+  }
+
+  async saveExpense(expense: Omit<Expense, 'id' | 'created_at'> & { id?: string }): Promise<Expense> {
+    const allExpenses = await this.getExpenses();
+    const newExpense: Expense = {
+      ...expense,
+      id: expense.id || `exp-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      created_at: new Date().toISOString(),
+      status: expense.status || 'APPROVED',
+    };
+
+    const updated = [newExpense, ...allExpenses.filter(e => e.id !== newExpense.id)];
+    localStorage.setItem(STORAGE_KEYS.EXPENSES, JSON.stringify(updated));
+
+    if (isSupabaseConfigured() && supabase) {
+      try {
+        await supabase.from('expenses').insert(newExpense);
+      } catch (err) {
+        console.warn('Supabase saveExpense error', err);
+      }
+    }
+
+    this.notifySubscribers();
+    return newExpense;
+  }
+
+  async updateExpenseStatus(
+    id: string,
+    status: 'APPROVED' | 'REJECTED',
+    rejection_reason?: string | null
+  ): Promise<void> {
+    const allExpenses = await this.getExpenses();
+    const index = allExpenses.findIndex(e => e.id === id);
+    if (index >= 0) {
+      allExpenses[index] = {
+        ...allExpenses[index],
+        status,
+        rejection_reason: status === 'REJECTED' ? rejection_reason || 'Rejected by Admin' : null,
+      };
+      localStorage.setItem(STORAGE_KEYS.EXPENSES, JSON.stringify(allExpenses));
+
+      if (isSupabaseConfigured() && supabase) {
+        try {
+          await supabase.from('expenses').update({
+            status,
+            rejection_reason: allExpenses[index].rejection_reason,
+          }).eq('id', id);
+        } catch (err) {
+          console.warn('Supabase updateExpenseStatus error', err);
+        }
+      }
+
+      this.notifySubscribers();
+    }
+  }
+
+  // --- MONTHLY LEDGERS & SETTLEMENTS ---
+  async getMonthlyLedgers(cycleMonth: string): Promise<MonthlyLedger[]> {
+    if (isSupabaseConfigured() && supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('monthly_ledgers')
+          .select('*')
+          .eq('cycle_month', cycleMonth);
+        if (!error && data) {
+          return data as MonthlyLedger[];
+        }
+      } catch (err) {
+        console.warn('Supabase getMonthlyLedgers error', err);
+      }
+    }
+
+    const raw = localStorage.getItem(STORAGE_KEYS.MONTHLY_LEDGERS);
+    const ledgers: MonthlyLedger[] = raw ? JSON.parse(raw) : [];
+    return ledgers.filter(l => l.cycle_month === cycleMonth);
+  }
+
+  async saveMonthlyLedger(ledger: MonthlyLedger): Promise<MonthlyLedger> {
+    const raw = localStorage.getItem(STORAGE_KEYS.MONTHLY_LEDGERS);
+    const allLedgers: MonthlyLedger[] = raw ? JSON.parse(raw) : [];
+
+    const key = `${ledger.devotee_id}_${ledger.cycle_month}`;
+    const index = allLedgers.findIndex(l => `${l.devotee_id}_${l.cycle_month}` === key);
+
+    const record: MonthlyLedger = {
+      ...ledger,
+      id: ledger.id || `ledg-${ledger.devotee_id}-${ledger.cycle_month}`,
+    };
+
+    let updated: MonthlyLedger[];
+    if (index >= 0) {
+      updated = [...allLedgers];
+      updated[index] = record;
+    } else {
+      updated = [...allLedgers, record];
+    }
+
+    localStorage.setItem(STORAGE_KEYS.MONTHLY_LEDGERS, JSON.stringify(updated));
+
+    if (isSupabaseConfigured() && supabase) {
+      try {
+        await supabase.from('monthly_ledgers').upsert(record);
+      } catch (err) {
+        console.warn('Supabase saveMonthlyLedger error', err);
+      }
+    }
+
+    this.notifySubscribers();
+    return record;
+  }
+
+  /**
+   * Request settlement by devotee (marks as PENDING_VERIFICATION)
+   */
+  async requestDevoteeSettlement(
+    devoteeId: string,
+    cycleMonth: string,
+    amount: number,
+    date: string
+  ): Promise<void> {
+    const ledgers = await this.getMonthlyLedgers(cycleMonth);
+    const existing = ledgers.find(l => l.devotee_id === devoteeId);
+
+    const updated: MonthlyLedger = {
+      id: existing?.id || `ledg-${devoteeId}-${cycleMonth}`,
+      devotee_id: devoteeId,
+      cycle_month: cycleMonth,
+      carried_forward_amount: existing ? Number(existing.carried_forward_amount || 0) : 0,
+      settlement_amount_reported: amount,
+      settlement_date_reported: date,
+      settlement_status: 'PENDING_VERIFICATION',
+      admin_notes: existing?.admin_notes || '',
+    };
+
+    await this.saveMonthlyLedger(updated);
+  }
+
+  /**
+   * Admin approves / settles devotee balance
+   */
+  async verifyAndSettleDevotee(
+    devoteeId: string,
+    cycleMonth: string,
+    amount: number,
+    date: string,
+    notes?: string
+  ): Promise<void> {
+    const ledgers = await this.getMonthlyLedgers(cycleMonth);
+    const existing = ledgers.find(l => l.devotee_id === devoteeId);
+
+    const updated: MonthlyLedger = {
+      id: existing?.id || `ledg-${devoteeId}-${cycleMonth}`,
+      devotee_id: devoteeId,
+      cycle_month: cycleMonth,
+      carried_forward_amount: existing ? Number(existing.carried_forward_amount || 0) : 0,
+      settlement_amount_reported: amount,
+      settlement_date_reported: date,
+      settlement_status: 'SETTLED',
+      admin_notes: notes || existing?.admin_notes || 'Verified by Admin',
+    };
+
+    await this.saveMonthlyLedger(updated);
+  }
+
+  /**
+   * Carry forward balances to next month
+   */
+  async carryOverBalancesToNextMonth(
+    currentMonth: string,
+    nextMonth: string,
+    summaries: { devoteeId: string; finalBalance: number }[]
+  ): Promise<number> {
+    const nextLedgers = await this.getMonthlyLedgers(nextMonth);
+    const nextMap = new Map(nextLedgers.map(l => [l.devotee_id, l]));
+
+    for (const item of summaries) {
+      const existingNext = nextMap.get(item.devoteeId);
+      const updated: MonthlyLedger = {
+        id: existingNext?.id || `ledg-${item.devoteeId}-${nextMonth}`,
+        devotee_id: item.devoteeId,
+        cycle_month: nextMonth,
+        carried_forward_amount: item.finalBalance, // roll forward final balance
+        settlement_amount_reported: 0,
+        settlement_date_reported: null,
+        settlement_status: 'UNSETTLED',
+        admin_notes: `Carried forward ₹${item.finalBalance} from ${currentMonth}`,
+      };
+      await this.saveMonthlyLedger(updated);
+    }
+
+    return summaries.length;
+  }
+
+  // --- SYSTEM CONFIG & ADMIN PIN ---
+  async getSystemConfig(key: string, defaultValue: string = ''): Promise<string> {
+    if (isSupabaseConfigured() && supabase) {
+      try {
+        const { data, error } = await supabase.from('system_config').select('value').eq('key', key).single();
+        if (!error && data) {
+          return data.value;
+        }
+      } catch (err) {
+        console.warn('Supabase getSystemConfig error', err);
+      }
+    }
+
+    const raw = localStorage.getItem(STORAGE_KEYS.SYSTEM_CONFIG);
+    const config: Record<string, string> = raw ? JSON.parse(raw) : DEFAULT_CONFIG;
+    return config[key] || defaultValue || DEFAULT_CONFIG[key] || '';
+  }
+
+  async setSystemConfig(key: string, value: string): Promise<void> {
+    const raw = localStorage.getItem(STORAGE_KEYS.SYSTEM_CONFIG);
+    const config: Record<string, string> = raw ? JSON.parse(raw) : DEFAULT_CONFIG;
+    config[key] = value;
+    localStorage.setItem(STORAGE_KEYS.SYSTEM_CONFIG, JSON.stringify(config));
+
+    if (isSupabaseConfigured() && supabase) {
+      try {
+        await supabase.from('system_config').upsert({ key, value });
+      } catch (err) {
+        console.warn('Supabase setSystemConfig error', err);
+      }
+    }
+
+    this.notifySubscribers();
+  }
+
+  /**
+   * Upload receipt to Supabase Storage or convert to Base64 data URL
+   */
+  async uploadReceipt(file: File): Promise<string> {
+    if (isSupabaseConfigured() && supabase) {
+      try {
+        const ext = file.name.split('.').pop() || 'jpg';
+        const filename = `${Date.now()}_${Math.random().toString(36).substr(2, 6)}.${ext}`;
+        const { data, error } = await supabase.storage.from('bills').upload(filename, file, {
+          cacheControl: '3600',
+          upsert: false,
+        });
+
+        if (!error && data) {
+          const { data: publicUrlData } = supabase.storage.from('bills').getPublicUrl(filename);
+          return publicUrlData.publicUrl;
+        }
+      } catch (err) {
+        console.warn('Supabase storage upload failed, falling back to base64 encoding', err);
+      }
+    }
+
+    // Fallback: Store as base64 string
+    return await fileToBase64(file);
+  }
+
+  // --- LOCAL PERSISTENCE HELPERS ---
+  getActivePhone(): string | null {
+    return localStorage.getItem(STORAGE_KEYS.ACTIVE_DEVOTEE_PHONE);
+  }
+
+  setActivePhone(phone: string | null): void {
+    if (phone) {
+      localStorage.setItem(STORAGE_KEYS.ACTIVE_DEVOTEE_PHONE, phone);
+    } else {
+      localStorage.removeItem(STORAGE_KEYS.ACTIVE_DEVOTEE_PHONE);
+    }
+  }
+
+  getActiveGuest(): string | null {
+    return localStorage.getItem(STORAGE_KEYS.ACTIVE_GUEST_NAME);
+  }
+
+  setActiveGuest(name: string | null): void {
+    if (name) {
+      localStorage.setItem(STORAGE_KEYS.ACTIVE_GUEST_NAME, name);
+    } else {
+      localStorage.removeItem(STORAGE_KEYS.ACTIVE_GUEST_NAME);
+    }
+  }
+
+  getAdminAuthenticated(): boolean {
+    return localStorage.getItem(STORAGE_KEYS.ADMIN_AUTH) === 'true';
+  }
+
+  setAdminAuthenticated(auth: boolean): void {
+    if (auth) {
+      localStorage.setItem(STORAGE_KEYS.ADMIN_AUTH, 'true');
+    } else {
+      localStorage.removeItem(STORAGE_KEYS.ADMIN_AUTH);
+    }
+  }
+
+  resetDatabaseToDefaults(): void {
+    localStorage.removeItem(STORAGE_KEYS.DEVOTEES);
+    localStorage.removeItem(STORAGE_KEYS.PRASADAM_COUNTS);
+    localStorage.removeItem(STORAGE_KEYS.EXPENSES);
+    localStorage.removeItem(STORAGE_KEYS.MONTHLY_LEDGERS);
+    localStorage.removeItem(STORAGE_KEYS.SYSTEM_CONFIG);
+    this.initialized = false;
+    this.init();
+    this.notifySubscribers();
+  }
+
+  // Reactive listeners
+  private listeners: (() => void)[] = [];
+
+  subscribe(listener: () => void): () => void {
+    this.listeners.push(listener);
+    return () => {
+      this.listeners = this.listeners.filter(l => l !== listener);
+    };
+  }
+
+  private notifySubscribers() {
+    this.listeners.forEach(listener => {
+      try {
+        listener();
+      } catch (err) {
+        console.error('Subscriber notification error', err);
+      }
+    });
+  }
+}
+
+export const storageService = new StorageService();
