@@ -68,7 +68,11 @@ export interface DevoteeMonthlySummary {
   lunch_total: number;
   dinner_total: number;
   total_meals: number;
-  prasadam_cost: number;
+  meals_cost: number;
+  family_member_count: number;
+  community_cost_per_member: number;
+  community_cost: number;
+  prasadam_cost: number; // Meals Cost + Community Cost
   approved_expenses: number;
   rejected_expenses: number;
   current_month_net: number; // Prasadam Cost - Approved Expenses

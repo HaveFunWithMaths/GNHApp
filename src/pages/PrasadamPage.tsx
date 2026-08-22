@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   Utensils,
   Plus,
@@ -16,7 +16,6 @@ import { Badge } from '../components/common/Badge';
 import { Modal } from '../components/common/Modal';
 import { Expense, PrasadamCount } from '../types';
 import {
-  getAllDatesInMonth,
   formatRupee,
   isCutoffPassed,
   getCutoffFormattedDate,
@@ -39,15 +38,13 @@ export const PrasadamPage: React.FC = () => {
     updateMonthlyMealCounts,
     submitExpense,
     expenses,
+    communityCostPerMember,
     isAdmin,
     showToast,
     setIsLoginModalOpen,
   } = useApp();
 
   const isLocked = isCutoffPassed(activeMonth) && !isAdmin;
-
-  // Days in active month
-  const monthDates: string[] = useMemo(() => getAllDatesInMonth(activeMonth), [activeMonth]);
 
   // Compute existing monthly totals for active devotee
   const existingTotals = useMemo(() => {
@@ -122,24 +119,35 @@ export const PrasadamPage: React.FC = () => {
     }
   };
 
-  // Quick helper presets
-  const applyPreset = (multiplier: number) => {
-    const days = monthDates.length;
-    setBCount(days * multiplier);
-    setLCount(days * multiplier);
-    setDCount(days * multiplier);
-    setHasUnsavedChanges(true);
-  };
 
   // Live calculated costs
   const bCost = bCount * PRASADAM_RATES.breakfast;
   const lCost = lCount * PRASADAM_RATES.lunch;
   const dCost = dCount * PRASADAM_RATES.dinner;
   const totalMeals = bCount + lCount + dCount;
-  const totalPrasadamCost = bCost + lCost + dCost;
+  const mealsCost = bCost + lCost + dCost;
+
+  const familyMembers = useMemo(() => {
+    return activeDevotee ? getFamilyMemberNames(activeDevotee) : [];
+  }, [activeDevotee]);
+
+  const memberCount = activeDevotee ? (familyMembers.length || 1) : 1;
+  const communityCost = memberCount * communityCostPerMember;
+  const totalPrasadamCost = mealsCost + communityCost;
+
+  // Resolve default payer name helper (defaults single family member or logged in member)
+  const getDefaultPayer = useCallback(() => {
+    if (loggedInMemberName) return loggedInMemberName;
+    if (activeDevotee) {
+      const members = getFamilyMemberNames(activeDevotee);
+      if (members.length === 1) return members[0];
+    }
+    if (guestName) return guestName;
+    return '';
+  }, [loggedInMemberName, activeDevotee, guestName]);
 
   // Expense form state
-  const [payerName, setPayerName] = useState<string>('');
+  const [payerName, setPayerName] = useState<string>(() => getDefaultPayer());
   const [expenseTitle, setExpenseTitle] = useState<string>('');
   const [expenseAmount, setExpenseAmount] = useState<string>('');
   const [expenseComments, setExpenseComments] = useState<string>('');
@@ -147,6 +155,11 @@ export const PrasadamPage: React.FC = () => {
   const [receiptPreview, setReceiptPreview] = useState<string | null>(null);
   const [isUploadingExpense, setIsUploadingExpense] = useState(false);
   const [viewingReceiptUrl, setViewingReceiptUrl] = useState<string | null>(null);
+
+  // Sync payer name with default whenever devotee/member context changes
+  useEffect(() => {
+    setPayerName(getDefaultPayer());
+  }, [getDefaultPayer]);
 
   // Handle Receipt photo selection
   const handleReceiptChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -185,7 +198,7 @@ export const PrasadamPage: React.FC = () => {
     const amountNum = parseFloat(expenseAmount);
     if (isNaN(amountNum) || !expenseTitle.trim()) return;
 
-    const defaultPayer = loggedInMemberName || getPrimaryFamilyMemberName(activeDevotee) || guestName || 'Devotee';
+    const defaultPayer = getDefaultPayer() || getPrimaryFamilyMemberName(activeDevotee) || guestName || 'Devotee';
     const resolvedPayer = payerName || defaultPayer;
 
     setIsUploadingExpense(true);
@@ -214,6 +227,7 @@ export const PrasadamPage: React.FC = () => {
       setExpenseComments('');
       setReceiptFile(null);
       setReceiptPreview(null);
+      setPayerName(getDefaultPayer());
     } finally {
       setIsUploadingExpense(false);
     }
@@ -257,7 +271,7 @@ export const PrasadamPage: React.FC = () => {
               <div>
                 <div className="flex items-center gap-2">
                   <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-                    {formatMonthName(activeMonth)} Prasadam Meal Counts
+                    {formatMonthName(activeMonth)} Prasadam Counts
                   </h2>
                   <Badge variant="saffron" size="sm">Direct Input</Badge>
                 </div>
@@ -280,46 +294,6 @@ export const PrasadamPage: React.FC = () => {
               )}
             </div>
           </div>
-
-          {/* Quick Presets */}
-          {!isLocked && activeDevotee && (
-            <div className="flex flex-wrap items-center gap-2 mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 text-xs">
-              <span className="text-slate-400 font-semibold">Quick Presets:</span>
-              <button
-                type="button"
-                onClick={() => applyPreset(1)}
-                className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-amber-100 dark:hover:bg-amber-950 text-slate-700 dark:text-slate-300 font-medium transition-colors"
-              >
-                1 Person ({monthDates.length} each)
-              </button>
-              <button
-                type="button"
-                onClick={() => applyPreset(2)}
-                className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-amber-100 dark:hover:bg-amber-950 text-slate-700 dark:text-slate-300 font-medium transition-colors"
-              >
-                2 Persons ({monthDates.length * 2} each)
-              </button>
-              <button
-                type="button"
-                onClick={() => applyPreset(3)}
-                className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-amber-100 dark:hover:bg-amber-950 text-slate-700 dark:text-slate-300 font-medium transition-colors"
-              >
-                3 Persons ({monthDates.length * 3} each)
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setBCount(0);
-                  setLCount(0);
-                  setDCount(0);
-                  setHasUnsavedChanges(true);
-                }}
-                className="px-2.5 py-1 rounded-lg bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 text-rose-600 dark:text-rose-400 font-medium transition-colors"
-              >
-                Clear (0)
-              </button>
-            </div>
-          )}
 
           {/* 3 Interactive Slot Input Cards */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-5">
@@ -499,13 +473,11 @@ export const PrasadamPage: React.FC = () => {
               {formatRupee(totalPrasadamCost)}
             </div>
             <div className="text-xs text-slate-600 dark:text-slate-300 mt-1 flex items-center gap-1.5 flex-wrap">
-              <span>Breakfast {formatRupee(bCost)}</span>
+              <span>Meals {formatRupee(mealsCost)} ({formatRupee(bCost)} + {formatRupee(lCost)} + {formatRupee(dCost)})</span>
               <span>+</span>
-              <span>Lunch {formatRupee(lCost)}</span>
-              <span>+</span>
-              <span>Dinner {formatRupee(dCost)}</span>
+              <span>Community Cost {formatRupee(communityCost)} ({memberCount} {memberCount === 1 ? 'member' : 'members'} × {formatRupee(communityCostPerMember)})</span>
               <span>=</span>
-              <strong className="text-amber-700 dark:text-amber-300">{formatRupee(totalPrasadamCost)}</strong>
+              <strong className="text-amber-700 dark:text-amber-300 font-bold">{formatRupee(totalPrasadamCost)}</strong>
             </div>
           </div>
 
@@ -555,12 +527,12 @@ export const PrasadamPage: React.FC = () => {
               </label>
               {activeDevotee ? (
                 <select
-                  value={payerName}
+                  value={payerName || (familyMembers.length === 1 ? familyMembers[0] : '')}
                   onChange={e => setPayerName(e.target.value)}
                   className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-amber-500 outline-none"
                 >
-                  <option value="">Select Member</option>
-                  {getFamilyMemberNames(activeDevotee).map((member: string) => (
+                  {familyMembers.length > 1 && <option value="">Select Member</option>}
+                  {familyMembers.map((member: string) => (
                     <option key={member} value={member}>
                       {member}
                     </option>

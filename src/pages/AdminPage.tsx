@@ -29,7 +29,7 @@ import { Devotee, DevoteeMonthlySummary, Expense, PrasadamCount, FamilyMember } 
 import {
   formatRupee,
   formatMonthName,
-  calculatePrasadamCost,
+  calculateMealsCost,
   getAllDatesInMonth,
   getCutoffFormattedDate,
   formatDevoteeName,
@@ -64,6 +64,8 @@ export const AdminPage: React.FC = () => {
     saveDevotee,
     adminPin,
     updateAdminPin,
+    communityCostPerMember,
+    updateCommunityCostPerMember,
     resetDatabase,
     showToast,
   } = useApp();
@@ -95,6 +97,27 @@ export const AdminPage: React.FC = () => {
 
   // PIN change state
   const [newPinInput, setNewPinInput] = useState('');
+
+  // Community Cost setting state
+  const [communityCostInput, setCommunityCostInput] = useState(communityCostPerMember.toString());
+
+  React.useEffect(() => {
+    setCommunityCostInput(communityCostPerMember.toString());
+  }, [communityCostPerMember]);
+
+  const handleUpdateCommunityCost = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const val = parseFloat(communityCostInput);
+    if (isNaN(val) || val < 0) {
+      showToast({
+        type: 'error',
+        title: 'Invalid Amount',
+        message: 'Please enter a valid positive number for Community Cost.',
+      });
+      return;
+    }
+    await updateCommunityCostPerMember(val);
+  };
 
   // Filter summaries based on search (matches group name, primary phone, member names, and member phones)
   const filteredSummaries = useMemo(() => {
@@ -461,7 +484,9 @@ export const AdminPage: React.FC = () => {
                     <th className="py-3 px-3">Devotee (Click to View)</th>
                     <th className="py-3 px-3">Phone</th>
                     <th className="py-3 px-3 text-center">Meals</th>
-                    <th className="py-3 px-3 text-right">Prasadam Cost</th>
+                    <th className="py-3 px-3 text-right">Meals Cost</th>
+                    <th className="py-3 px-3 text-right">Community Cost</th>
+                    <th className="py-3 px-3 text-right">Total Prasadam</th>
                     <th className="py-3 px-3 text-right">Expenses</th>
                     <th className="py-3 px-3 text-right">Carry Fwd</th>
                     <th className="py-3 px-3 text-right">Final Balance</th>
@@ -498,7 +523,14 @@ export const AdminPage: React.FC = () => {
                         <td className="py-3 px-3 text-center font-bold">
                           {s.total_meals}
                         </td>
-                        <td className="py-3 px-3 text-right font-bold">
+                        <td className="py-3 px-3 text-right text-slate-600 dark:text-slate-300">
+                          {formatRupee(s.meals_cost)}
+                        </td>
+                        <td className="py-3 px-3 text-right text-slate-600 dark:text-slate-300">
+                          {formatRupee(s.community_cost)}
+                          <span className="text-[10px] text-slate-400 block">({s.family_member_count}m × ₹{s.community_cost_per_member})</span>
+                        </td>
+                        <td className="py-3 px-3 text-right font-bold text-slate-900 dark:text-white">
                           {formatRupee(s.prasadam_cost)}
                         </td>
                         <td className="py-3 px-3 text-right font-bold text-emerald-600 dark:text-emerald-400">
@@ -893,6 +925,35 @@ export const AdminPage: React.FC = () => {
       {/* TAB 6: SETTINGS & DATABASE */}
       {activeAdminTab === 'settings' && (
         <div className="max-w-2xl space-y-6">
+          {/* Community Cost & Rate Settings */}
+          <Card className="p-5 border border-slate-200 dark:border-slate-800 shadow-sm">
+            <h4 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2 mb-1.5">
+              <IndianRupee className="w-4 h-4 text-amber-500" />
+              <span>Community Cost Per Family Member</span>
+            </h4>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">
+              Fixed community cost levied to each registered devotee family member in monthly prasadam calculations. Current active rate: <strong className="text-amber-600 dark:text-amber-400 font-mono">₹{communityCostPerMember}</strong> / member (Default: ₹500).
+            </p>
+            <form onSubmit={handleUpdateCommunityCost} className="flex gap-2">
+              <div className="relative flex-1">
+                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-400">₹</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="10"
+                  required
+                  placeholder="e.g. 500"
+                  value={communityCostInput}
+                  onChange={e => setCommunityCostInput(e.target.value)}
+                  className="w-full pl-8 pr-3.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold outline-none"
+                />
+              </div>
+              <Button type="submit" variant="saffron" size="sm">
+                Save Rate
+              </Button>
+            </form>
+          </Card>
+
           {/* Admin PIN Changer */}
           <Card className="p-5 border border-slate-200 dark:border-slate-800 shadow-sm">
             <h4 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2 mb-3">
@@ -924,7 +985,7 @@ export const AdminPage: React.FC = () => {
               <span>Reset / Restore Initial Seed Data</span>
             </h4>
             <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
-              Restores the default seed dataset with 30 Vaishnava devotee groups, sample meal matrix, and initial expenses.
+              Restores the registered Vaishnava devotee roster from seed configuration and resets all meal counts and expenses to zero.
             </p>
             <Button
               onClick={() => {
@@ -974,7 +1035,7 @@ export const AdminPage: React.FC = () => {
                   const b = entry?.breakfast_count || 0;
                   const l = entry?.lunch_count || 0;
                   const d = entry?.dinner_count || 0;
-                  const cost = calculatePrasadamCost(b, l, d);
+                  const cost = calculateMealsCost(b, l, d);
 
                   return (
                     <tr key={dateStr}>

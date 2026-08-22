@@ -205,10 +205,10 @@ export const ReportsPage: React.FC = () => {
                 </span>
                 <div
                   className={`text-3xl sm:text-4xl font-extrabold tracking-tight mt-0.5 ${summary.final_balance > 0
-                      ? 'text-rose-400'
-                      : summary.final_balance < 0
-                        ? 'text-emerald-400'
-                        : 'text-slate-200'
+                    ? 'text-rose-400'
+                    : summary.final_balance < 0
+                      ? 'text-emerald-400'
+                      : 'text-slate-200'
                     }`}
                 >
                   {formatRupee(summary.final_balance)}
@@ -242,7 +242,7 @@ export const ReportsPage: React.FC = () => {
                 {formatRupee(summary.prasadam_cost)}
               </div>
               <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
-                {summary.total_meals} meals (B: {summary.breakfast_total}, L: {summary.lunch_total}, D: {summary.dinner_total})
+                Meals {formatRupee(summary.meals_cost)} + Community {formatRupee(summary.community_cost)}
               </div>
             </div>
 
@@ -295,7 +295,7 @@ export const ReportsPage: React.FC = () => {
               <div className="flex items-center gap-2">
                 <Calculator className="w-4 h-4 text-amber-500" />
                 <h4 className="text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-200">
-                  Prasadam Cost Calculation (Breakfast + Lunch + Dinner Cost)
+                  Prasadam Cost Calculation (Meals Cost + Community Cost)
                 </h4>
               </div>
               <button type="button" className="text-slate-400 hover:text-slate-600">
@@ -305,7 +305,7 @@ export const ReportsPage: React.FC = () => {
 
             {showCalculationDetails && (
               <div className="mt-3 space-y-2">
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 text-xs">
                   <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-700/80">
                     <div className="text-slate-400">Breakfast Cost (₹40 / plate)</div>
                     <div className="font-bold text-slate-800 dark:text-slate-200 mt-0.5">
@@ -326,10 +326,17 @@ export const ReportsPage: React.FC = () => {
                       {summary.dinner_total} plates × ₹40 = <span className="text-amber-600 dark:text-amber-400">{formatRupee(dCost)}</span>
                     </div>
                   </div>
+
+                  <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-700/80">
+                    <div className="text-slate-400">Community Cost (₹{summary.community_cost_per_member} / member)</div>
+                    <div className="font-bold text-slate-800 dark:text-slate-200 mt-0.5">
+                      {summary.family_member_count} {summary.family_member_count === 1 ? 'member' : 'members'} × {formatRupee(summary.community_cost_per_member)} = <span className="text-amber-600 dark:text-amber-400">{formatRupee(summary.community_cost)}</span>
+                    </div>
+                  </div>
                 </div>
 
                 <div className="p-2.5 rounded-xl bg-amber-500/10 dark:bg-amber-950/30 border border-amber-500/20 text-xs text-slate-700 dark:text-slate-300 font-medium">
-                  <strong>Prasadam Total:</strong> Breakfast Cost ({formatRupee(bCost)}) + Lunch Cost ({formatRupee(lCost)}) + Dinner Cost ({formatRupee(dCost)}) = <strong className="text-amber-700 dark:text-amber-300 font-bold">{formatRupee(summary.prasadam_cost)}</strong> ({summary.total_meals} total meals)
+                  <strong>Prasadam Total:</strong> Meals Cost ({formatRupee(summary.meals_cost)}) + Community Cost ({formatRupee(summary.community_cost)}) = <strong className="text-amber-700 dark:text-amber-300 font-bold">{formatRupee(summary.prasadam_cost)}</strong> ({summary.total_meals} total meals across {summary.family_member_count} {summary.family_member_count === 1 ? 'family member' : 'family members'})
                 </div>
               </div>
             )}
@@ -380,7 +387,7 @@ export const ReportsPage: React.FC = () => {
           </div>
 
           <div className="text-left sm:text-right">
-            <span className="text-xs text-slate-400 font-medium">Your Janmashtami Seva</span>
+            <span className="text-xs text-slate-400 font-medium">Your Janmashtami Expenses</span>
             <div className="text-2xl font-bold text-amber-600 dark:text-amber-400">
               {formatRupee(totalJanmashtamiDevotee)}
             </div>

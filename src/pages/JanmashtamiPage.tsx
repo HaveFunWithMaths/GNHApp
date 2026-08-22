@@ -30,8 +30,19 @@ export const JanmashtamiPage: React.FC = () => {
     showToast,
   } = useApp();
 
+  // Resolve default payer name helper (defaults single family member or logged in member)
+  const getDefaultPayer = React.useCallback(() => {
+    if (loggedInMemberName) return loggedInMemberName;
+    if (activeDevotee) {
+      const members = getFamilyMemberNames(activeDevotee);
+      if (members.length === 1) return members[0];
+    }
+    if (guestName) return guestName;
+    return '';
+  }, [loggedInMemberName, activeDevotee, guestName]);
+
   // Form states
-  const [payerName, setPayerName] = useState<string>('');
+  const [payerName, setPayerName] = useState<string>(() => getDefaultPayer());
   const [expenseTitle, setExpenseTitle] = useState<string>('');
   const [expenseAmount, setExpenseAmount] = useState<string>('');
   const [expenseComments, setExpenseComments] = useState<string>('');
@@ -39,6 +50,11 @@ export const JanmashtamiPage: React.FC = () => {
   const [receiptPreview, setReceiptPreview] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [viewingReceiptUrl, setViewingReceiptUrl] = useState<string | null>(null);
+
+  // Sync payer name with default whenever devotee/member context changes
+  React.useEffect(() => {
+    setPayerName(getDefaultPayer());
+  }, [getDefaultPayer]);
 
   // Filter only Janmashtami expenses
   const allJanmashtamiExpenses = expenses.filter(
@@ -78,7 +94,7 @@ export const JanmashtamiPage: React.FC = () => {
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const amountNum = parseFloat(expenseAmount);
-    const defaultPayer = loggedInMemberName || getPrimaryFamilyMemberName(activeDevotee) || guestName || '';
+    const defaultPayer = getDefaultPayer() || getPrimaryFamilyMemberName(activeDevotee) || guestName || '';
     const resolvedPayer = payerName.trim() || defaultPayer;
 
     if (!resolvedPayer) {
@@ -129,6 +145,7 @@ export const JanmashtamiPage: React.FC = () => {
       setExpenseComments('');
       setReceiptFile(null);
       setReceiptPreview(null);
+      setPayerName(getDefaultPayer());
     } catch (err: any) {
       showToast({
         type: 'error',
@@ -145,7 +162,7 @@ export const JanmashtamiPage: React.FC = () => {
       {/* 1. Festive Hero Banner */}
       <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-amber-600 via-orange-600 to-amber-700 p-6 sm:p-8 text-white shadow-xl">
         <div className="absolute top-0 right-0 -mt-10 -mr-10 w-48 h-48 rounded-full bg-white/10 blur-2xl pointer-events-none" />
-        
+
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="space-y-2">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/20 backdrop-blur-md text-xs font-semibold">
@@ -210,11 +227,11 @@ export const JanmashtamiPage: React.FC = () => {
               </label>
               {activeDevotee ? (
                 <select
-                  value={payerName}
+                  value={payerName || (getFamilyMemberNames(activeDevotee).length === 1 ? getFamilyMemberNames(activeDevotee)[0] : '')}
                   onChange={e => setPayerName(e.target.value)}
                   className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-amber-500 outline-none"
                 >
-                  <option value="">Select Member</option>
+                  {getFamilyMemberNames(activeDevotee).length > 1 && <option value="">Select Member</option>}
                   {getFamilyMemberNames(activeDevotee).map((member: string) => (
                     <option key={member} value={member}>
                       {member}
@@ -325,7 +342,7 @@ export const JanmashtamiPage: React.FC = () => {
       <Card className="p-5 sm:p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-base font-bold text-slate-900 dark:text-white">
-            All Janmashtami Seva Entries ({allJanmashtamiExpenses.length})
+            All Janmashtami Expenses Entries ({allJanmashtamiExpenses.length})
           </h3>
           <span className="text-xs text-amber-600 dark:text-amber-400 font-semibold">
             Total Seva: {formatRupee(totalJanmashtamiFund)}
@@ -405,7 +422,7 @@ export const JanmashtamiPage: React.FC = () => {
       <Modal
         isOpen={Boolean(viewingReceiptUrl)}
         onClose={() => setViewingReceiptUrl(null)}
-        title="Janmashtami Seva Receipt"
+        title="Janmashtami Expenses Receipt"
         maxWidth="lg"
       >
         {viewingReceiptUrl && (

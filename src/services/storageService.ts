@@ -1,7 +1,7 @@
 import { Devotee, PrasadamCount, Expense, MonthlyLedger } from '../types';
 import { INITIAL_DEVOTEES } from '../data/seedDevotees';
 import { supabase, isSupabaseConfigured } from './supabase';
-import { getCurrentCycleMonth, calculateDevoteeMaxCounts, getAllDatesInMonth } from '../utils/calculations';
+import { calculateDevoteeMaxCounts, getAllDatesInMonth } from '../utils/calculations';
 import { normalizeFamilyMembers } from '../utils/devoteeHelpers';
 import { fileToBase64 } from '../utils/imageCompressor';
 
@@ -16,7 +16,10 @@ const STORAGE_KEYS = {
   ACTIVE_GUEST_NAME: 'gnh_active_guest',
   ADMIN_AUTH: 'gnh_admin_auth',
   ACTIVE_MONTH: 'gnh_active_month',
+  SCHEMA_VERSION: 'gnh_schema_version',
 };
+
+const CURRENT_SCHEMA_VERSION = '2026_08_clean_v2';
 
 // Initial Seed System Config
 const DEFAULT_CONFIG: Record<string, string> = {
@@ -24,121 +27,8 @@ const DEFAULT_CONFIG: Record<string, string> = {
   breakfast_rate: '40',
   lunch_rate: '80',
   dinner_rate: '40',
+  community_cost_per_member: '500',
 };
-
-// Generate sample starting data for current month to ensure rich initial state
-function generateInitialSampleData() {
-  const currentMonth = getCurrentCycleMonth();
-  const [yearStr, monthStr] = currentMonth.split('-');
-  const counts: PrasadamCount[] = [];
-  const expenses: Expense[] = [];
-  const ledgers: MonthlyLedger[] = [];
-
-  // Seed some realistic counts for first 15 days of current month for top 12 devotees
-  for (let d = 1; d <= 15; d++) {
-    const dayStr = d.toString().padStart(2, '0');
-    const date = `${yearStr}-${monthStr}-${dayStr}`;
-
-    INITIAL_DEVOTEES.slice(0, 12).forEach((devotee, index) => {
-      // Deterministic realistic counts
-      const b = (d + index) % 3 === 0 ? 0 : (index % 2 === 0 ? 2 : 1);
-      const l = (d + index) % 4 === 0 ? 0 : (index % 2 === 0 ? 2 : 1);
-      const dCount = (d + index) % 5 === 0 ? 0 : 2;
-
-      counts.push({
-        id: `cnt-${devotee.id}-${date}`,
-        devotee_id: devotee.id,
-        date,
-        breakfast_count: b,
-        lunch_count: l,
-        dinner_count: dCount,
-        is_auto_filled: false,
-        updated_at: new Date().toISOString(),
-      });
-    });
-  }
-
-  // Seed sample regular expenses
-  expenses.push(
-    {
-      id: 'exp-001',
-      devotee_id: INITIAL_DEVOTEES[0].id,
-      type: 'REGULAR',
-      payer_name: 'Ram Das',
-      title: 'Vegetables & Herbs for Sunday Feast',
-      amount: 1450,
-      comments: 'Procured from Wholesale APMC Mandi',
-      status: 'APPROVED',
-      cycle_month: currentMonth,
-      created_at: new Date(Date.now() - 5 * 86400000).toISOString(),
-    },
-    {
-      id: 'exp-002',
-      devotee_id: INITIAL_DEVOTEES[1].id,
-      type: 'REGULAR',
-      payer_name: 'Govinda Das',
-      title: 'Pure Desi Ghee 5 Liters',
-      amount: 3200,
-      comments: 'For temple cooking and sweets',
-      status: 'APPROVED',
-      cycle_month: currentMonth,
-      created_at: new Date(Date.now() - 3 * 86400000).toISOString(),
-    },
-    {
-      id: 'exp-003',
-      devotee_id: INITIAL_DEVOTEES[2].id,
-      type: 'REGULAR',
-      payer_name: 'Madhava Das',
-      title: 'Cleaning Supplies & Detergents',
-      amount: 450,
-      comments: 'Kitchen sanitation supplies',
-      status: 'APPROVED',
-      cycle_month: currentMonth,
-      created_at: new Date(Date.now() - 1 * 86400000).toISOString(),
-    },
-    // Seed Janmashtami Festival Expenses
-    {
-      id: 'exp-j-001',
-      devotee_id: INITIAL_DEVOTEES[0].id,
-      type: 'JANMASHTAMI',
-      payer_name: 'Ram Das',
-      title: 'Janmashtami Flower Garland & Stage Decor',
-      amount: 8500,
-      comments: 'Marigold & Jasmine garlands for altar',
-      status: 'APPROVED',
-      cycle_month: currentMonth,
-      created_at: new Date(Date.now() - 7 * 86400000).toISOString(),
-    },
-    {
-      id: 'exp-j-002',
-      devotee_id: INITIAL_DEVOTEES[3].id,
-      type: 'JANMASHTAMI',
-      payer_name: 'Mukunda Das',
-      title: 'Janmashtami 108 Bhoga Special Ingredients',
-      amount: 12400,
-      comments: 'Dry fruits, saffron, paneer, and mawa',
-      status: 'APPROVED',
-      cycle_month: currentMonth,
-      created_at: new Date(Date.now() - 4 * 86400000).toISOString(),
-    }
-  );
-
-  // Seed sample ledgers with previous carried forward amounts
-  INITIAL_DEVOTEES.forEach((devotee, index) => {
-    ledgers.push({
-      id: `ledg-${devotee.id}-${currentMonth}`,
-      devotee_id: devotee.id,
-      cycle_month: currentMonth,
-      carried_forward_amount: index === 1 ? -450 : index === 4 ? 600 : 0,
-      settlement_amount_reported: 0,
-      settlement_date_reported: null,
-      settlement_status: 'UNSETTLED',
-      admin_notes: '',
-    });
-  });
-
-  return { counts, expenses, ledgers };
-}
 
 class StorageService {
   private initialized = false;
@@ -150,26 +40,40 @@ class StorageService {
   private init() {
     if (this.initialized) return;
 
-    // Check if localStorage has devotees; if not, populate seed
-    const existingDevotees = localStorage.getItem(STORAGE_KEYS.DEVOTEES);
-    if (!existingDevotees) {
+    const savedVersion = localStorage.getItem(STORAGE_KEYS.SCHEMA_VERSION);
+
+    if (savedVersion !== CURRENT_SCHEMA_VERSION) {
+      // Clean slate initialization: Seed updated devotees, zero expenses, zero counts, zero ledgers
       localStorage.setItem(STORAGE_KEYS.DEVOTEES, JSON.stringify(INITIAL_DEVOTEES));
+      localStorage.setItem(STORAGE_KEYS.PRASADAM_COUNTS, JSON.stringify([]));
+      localStorage.setItem(STORAGE_KEYS.EXPENSES, JSON.stringify([]));
+      localStorage.setItem(STORAGE_KEYS.MONTHLY_LEDGERS, JSON.stringify([]));
+      localStorage.setItem(STORAGE_KEYS.SCHEMA_VERSION, CURRENT_SCHEMA_VERSION);
+    } else {
+      const existingDevotees = localStorage.getItem(STORAGE_KEYS.DEVOTEES);
+      if (!existingDevotees) {
+        localStorage.setItem(STORAGE_KEYS.DEVOTEES, JSON.stringify(INITIAL_DEVOTEES));
+      }
+
+      const existingCounts = localStorage.getItem(STORAGE_KEYS.PRASADAM_COUNTS);
+      if (!existingCounts) {
+        localStorage.setItem(STORAGE_KEYS.PRASADAM_COUNTS, JSON.stringify([]));
+      }
+
+      const existingExpenses = localStorage.getItem(STORAGE_KEYS.EXPENSES);
+      if (!existingExpenses) {
+        localStorage.setItem(STORAGE_KEYS.EXPENSES, JSON.stringify([]));
+      }
+
+      const existingLedgers = localStorage.getItem(STORAGE_KEYS.MONTHLY_LEDGERS);
+      if (!existingLedgers) {
+        localStorage.setItem(STORAGE_KEYS.MONTHLY_LEDGERS, JSON.stringify([]));
+      }
     }
 
     const existingConfig = localStorage.getItem(STORAGE_KEYS.SYSTEM_CONFIG);
     if (!existingConfig) {
       localStorage.setItem(STORAGE_KEYS.SYSTEM_CONFIG, JSON.stringify(DEFAULT_CONFIG));
-    }
-
-    const existingCounts = localStorage.getItem(STORAGE_KEYS.PRASADAM_COUNTS);
-    const existingExpenses = localStorage.getItem(STORAGE_KEYS.EXPENSES);
-    const existingLedgers = localStorage.getItem(STORAGE_KEYS.MONTHLY_LEDGERS);
-
-    if (!existingCounts || !existingExpenses || !existingLedgers) {
-      const sample = generateInitialSampleData();
-      if (!existingCounts) localStorage.setItem(STORAGE_KEYS.PRASADAM_COUNTS, JSON.stringify(sample.counts));
-      if (!existingExpenses) localStorage.setItem(STORAGE_KEYS.EXPENSES, JSON.stringify(sample.expenses));
-      if (!existingLedgers) localStorage.setItem(STORAGE_KEYS.MONTHLY_LEDGERS, JSON.stringify(sample.ledgers));
     }
 
     this.initialized = true;

@@ -122,15 +122,32 @@ export function formatDevoteeName(devotee: Devotee): string {
   return devotee.group_name;
 }
 
+export const DEFAULT_COMMUNITY_COST_PER_MEMBER = 500;
+
 /**
- * Compute Prasadam cost for given counts
+ * Compute raw Meals cost for given counts (Breakfast, Lunch, Dinner)
  */
-export function calculatePrasadamCost(breakfast: number, lunch: number, dinner: number): number {
+export function calculateMealsCost(breakfast: number, lunch: number, dinner: number): number {
   return (
     breakfast * PRASADAM_RATES.breakfast +
     lunch * PRASADAM_RATES.lunch +
     dinner * PRASADAM_RATES.dinner
   );
+}
+
+/**
+ * Compute Total Prasadam cost including meals cost and family member community cost
+ */
+export function calculatePrasadamCost(
+  breakfast: number,
+  lunch: number,
+  dinner: number,
+  memberCount: number = 0,
+  communityCostPerMember: number = DEFAULT_COMMUNITY_COST_PER_MEMBER
+): number {
+  const mealsCost = calculateMealsCost(breakfast, lunch, dinner);
+  const communityCost = memberCount * communityCostPerMember;
+  return mealsCost + communityCost;
 }
 
 /**
@@ -169,6 +186,7 @@ export function computeDevoteeMonthlySummary(
   allCounts: PrasadamCount[],
   allExpenses: Expense[],
   ledger?: MonthlyLedger | null,
+  communityCostPerMember: number = DEFAULT_COMMUNITY_COST_PER_MEMBER,
   now: Date = new Date()
 ): DevoteeMonthlySummary {
   const devoteeCounts = allCounts.filter(
@@ -198,7 +216,13 @@ export function computeDevoteeMonthlySummary(
   });
 
   const total_meals = breakfast_total + lunch_total + dinner_total;
-  const prasadam_cost = calculatePrasadamCost(breakfast_total, lunch_total, dinner_total);
+  const meals_cost = calculateMealsCost(breakfast_total, lunch_total, dinner_total);
+
+  // Community cost calculation
+  const memberNames = getFamilyMemberNames(devotee);
+  const family_member_count = memberNames.length > 0 ? memberNames.length : 1;
+  const community_cost = family_member_count * communityCostPerMember;
+  const prasadam_cost = meals_cost + community_cost;
 
   // Filter regular expenses for this devotee and cycle month
   const devoteeRegularExpenses = allExpenses.filter(
@@ -236,6 +260,10 @@ export function computeDevoteeMonthlySummary(
     lunch_total,
     dinner_total,
     total_meals,
+    meals_cost,
+    family_member_count,
+    community_cost_per_member: communityCostPerMember,
+    community_cost,
     prasadam_cost,
     approved_expenses,
     rejected_expenses,
@@ -247,7 +275,7 @@ export function computeDevoteeMonthlySummary(
     final_balance,
     unfilled_days,
     is_locked,
-    janmashtami_expenses
+    janmashtami_expenses,
   };
 }
 

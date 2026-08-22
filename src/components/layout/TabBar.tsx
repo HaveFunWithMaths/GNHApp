@@ -35,19 +35,19 @@ export const TabBar: React.FC = () => {
     },
     {
       id: 'janmashtami',
-      label: 'Janmashtami Seva',
+      label: 'Janmashtami Expenses',
       shortLabel: 'Janmashtami',
       icon: Sparkles,
     },
     ...(isAdmin
       ? [
-          {
-            id: 'admin' as ActiveTab,
-            label: 'Admin Control Center',
-            shortLabel: 'Admin',
-            icon: ShieldCheck,
-          },
-        ]
+        {
+          id: 'admin' as ActiveTab,
+          label: 'Admin Control Center',
+          shortLabel: 'Admin',
+          icon: ShieldCheck,
+        },
+      ]
       : []),
   ];
 

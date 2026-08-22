@@ -12,7 +12,7 @@ import {
   getCurrentCycleMonth,
   computeDevoteeMonthlySummary,
 } from '../utils/calculations';
-import { findDevoteeByPhone } from '../utils/devoteeHelpers';
+import { findDevoteeByPhone, getFamilyMemberNames } from '../utils/devoteeHelpers';
 
 export interface ToastInfo {
   id: string;
@@ -47,10 +47,12 @@ interface AppContextType {
   removeToast: (id: string) => void;
 
   // Summaries
+  communityCostPerMember: number;
   currentDevoteeSummary: DevoteeMonthlySummary | null;
   allDevoteeSummaries: DevoteeMonthlySummary[];
 
   // Actions
+  updateCommunityCostPerMember: (newCost: number) => Promise<void>;
   loginWithPhone: (phone: string) => Promise<boolean>;
   loginAsGuest: (name: string) => void;
   logoutDevotee: () => void;
@@ -92,6 +94,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const isInitiallyAdmin = storageService.getAdminAuthenticated();
   const [isAdmin, setIsAdmin] = useState<boolean>(isInitiallyAdmin);
   const [adminPin, setAdminPin] = useState<string>('192108');
+  const [communityCostPerMember, setCommunityCostPerMember] = useState<number>(500);
 
   const [activeMonth, setActiveMonthState] = useState<string>(initialMonth);
   const [activeTab, setActiveTabState] = useState<ActiveTab>(
@@ -161,23 +164,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return;
     }
     setActiveTabState(tab);
-    updateUrlParams(tab, activeMonth, activeDevotee?.phone_number || null, guestName);
+    const activePhone = storageService.getActivePhone() || activeDevotee?.phone_number || null;
+    updateUrlParams(tab, activeMonth, activePhone, guestName);
   }, [activeMonth, activeDevotee, guestName, isAdmin, updateUrlParams]);
 
   const setActiveMonth = useCallback((month: string) => {
     setActiveMonthState(month);
-    updateUrlParams(activeTab, month, activeDevotee?.phone_number || null, guestName);
+    const activePhone = storageService.getActivePhone() || activeDevotee?.phone_number || null;
+    updateUrlParams(activeTab, month, activePhone, guestName);
   }, [activeTab, activeDevotee, guestName, updateUrlParams]);
 
   // Load core data from storage service
   const refreshData = useCallback(async () => {
     try {
-      const [devoteesList, countsList, expensesList, ledgersList, pin] = await Promise.all([
+      const [devoteesList, countsList, expensesList, ledgersList, pin, commCost] = await Promise.all([
         storageService.getDevotees(),
         storageService.getPrasadamCounts(activeMonth),
         storageService.getExpenses(activeMonth),
         storageService.getMonthlyLedgers(activeMonth),
         storageService.getSystemConfig('admin_pin_hash', '192108'),
+        storageService.getSystemConfig('community_cost_per_member', '500'),
       ]);
 
       setDevotees(devoteesList);
@@ -185,14 +191,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setExpenses(expensesList);
       setMonthlyLedgers(ledgersList);
       setAdminPin(pin || '192108');
+      setCommunityCostPerMember(parseInt(commCost, 10) || 500);
 
       // Set active devotee ONLY if explicitly logged in with phone or guest
-      const phoneToFind = activeDevotee?.phone_number || storageService.getActivePhone();
+      const urlPhone = new URLSearchParams(window.location.search).get('phone');
+      const phoneToFind = urlPhone || storageService.getActivePhone() || activeDevotee?.phone_number;
       if (phoneToFind && !guestName) {
         const match = findDevoteeByPhone(devoteesList, phoneToFind);
         if (match) {
           setActiveDevotee(match.devotee);
-          setLoggedInMemberName(match.matchedMemberName || null);
+          setLoggedInMemberName(match.matchedMemberName || (getFamilyMemberNames(match.devotee).length === 1 ? getFamilyMemberNames(match.devotee)[0] : null));
         }
       }
     } catch (err) {
@@ -220,10 +228,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         activeMonth,
         prasadamCounts,
         expenses,
-        ledger
+        ledger,
+        communityCostPerMember
       );
     });
-  }, [devotees, activeMonth, prasadamCounts, expenses, monthlyLedgers]);
+  }, [devotees, activeMonth, prasadamCounts, expenses, monthlyLedgers, communityCostPerMember]);
 
   const currentDevoteeSummary = useMemo(() => {
     if (!activeDevotee) return null;
@@ -233,9 +242,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       activeMonth,
       prasadamCounts,
       expenses,
-      ledger
+      ledger,
+      communityCostPerMember
     );
-  }, [activeDevotee, activeMonth, prasadamCounts, expenses, monthlyLedgers]);
+  }, [activeDevotee, activeMonth, prasadamCounts, expenses, monthlyLedgers, communityCostPerMember]);
 
   // Authentication Handlers
   const loginWithPhone = async (phone: string): Promise<boolean> => {
@@ -450,6 +460,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   };
 
+  const updateCommunityCostPerMember = async (newCost: number) => {
+    const clamped = Math.max(0, newCost);
+    await storageService.setSystemConfig('community_cost_per_member', clamped.toString());
+    setCommunityCostPerMember(clamped);
+    showToast({
+      type: 'success',
+      title: 'Settings Updated',
+      message: `Community Cost per family member updated to ₹${clamped}.`,
+    });
+  };
+
   const resetDatabase = () => {
     storageService.resetDatabaseToDefaults();
     showToast({
@@ -484,6 +505,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         toasts,
         showToast,
         removeToast,
+        communityCostPerMember,
+        updateCommunityCostPerMember,
         currentDevoteeSummary,
         allDevoteeSummaries,
         loginWithPhone,
