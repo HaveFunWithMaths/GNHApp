@@ -85,6 +85,7 @@ INSERT INTO system_config (key, value) VALUES
     ('breakfast_rate', '40'),
     ('lunch_rate', '80'),
     ('dinner_rate', '40'),
+    ('community_cost_per_member', '500'),
     ('cutoff_time', '20:00')
 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
 
@@ -101,39 +102,27 @@ CREATE POLICY "Allow public read-write for expenses" ON expenses FOR ALL USING (
 CREATE POLICY "Allow public read-write for monthly_ledgers" ON monthly_ledgers FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow public read-write for system_config" ON system_config FOR ALL USING (true) WITH CHECK (true);
 
--- 6. Seed Dataset: 30 Devotees and Family Members
+-- 6. Seed Dataset: Registered Vaishnava Devotees & Family Members
 INSERT INTO devotees (id, phone_number, group_name, family_members, is_admin) VALUES
-('d1000000-0000-0000-0000-000000000001', '9876543201', 'Ram Das Group', '[{"name": "Ram Das", "phone_number": "9876543201"}, {"name": "Sita Devi", "phone_number": "9876543299"}, {"name": "Laxman Das", "phone_number": ""}]'::jsonb, TRUE),
-('d1000000-0000-0000-0000-000000000002', '9876543202', 'Govinda Priya Group', '[{"name": "Govinda Das", "phone_number": "9876543202"}, {"name": "Priya Radhika Devi", "phone_number": "9876543298"}, {"name": "Gopal", "phone_number": ""}]'::jsonb, FALSE),
-('d1000000-0000-0000-0000-000000000003', '9876543203', 'Madhava Charan Group', '[{"name": "Madhava Das", "phone_number": "9876543203"}, {"name": "Yamuna Devi", "phone_number": "9876543297"}]'::jsonb, FALSE),
-('d1000000-0000-0000-0000-000000000004', '9876543204', 'Mukunda Sevak Group', '[{"name": "Mukunda Das", "phone_number": "9876543204"}, {"name": "Tulasi Priya Devi", "phone_number": "9876543296"}, {"name": "Nimai", "phone_number": ""}]'::jsonb, FALSE),
-('d1000000-0000-0000-0000-000000000005', '9876543205', 'Damodar Prasad Group', '[{"name": "Damodar Das", "phone_number": "9876543205"}, {"name": "Lalita Devi", "phone_number": "9876543295"}, {"name": "Nitai", "phone_number": ""}]'::jsonb, FALSE),
-('d1000000-0000-0000-0000-000000000006', '9876543206', 'Ananda Murari Group', '[{"name": "Ananda Das", "phone_number": "9876543206"}, {"name": "Vishakha Devi", "phone_number": "9876543294"}]'::jsonb, FALSE),
-('d1000000-0000-0000-0000-000000000007', '9876543207', 'Chaitanya Prem Group', '[{"name": "Chaitanya Das", "phone_number": "9876543207"}, {"name": "Padmavati Devi", "phone_number": "9876543293"}, {"name": "Gauranga", "phone_number": ""}]'::jsonb, FALSE),
-('d1000000-0000-0000-0000-000000000008', '9876543208', 'Gauranga Sundar Group', '[{"name": "Gauranga Das", "phone_number": "9876543208"}, {"name": "Malati Devi", "phone_number": "9876543292"}]'::jsonb, FALSE),
-('d1000000-0000-0000-0000-000000000009', '9876543209', 'Hari Bhakt Group', '[{"name": "Hari Das", "phone_number": "9876543209"}, {"name": "Kunti Devi", "phone_number": "9876543291"}, {"name": "Arjuna", "phone_number": ""}]'::jsonb, FALSE),
-('d1000000-0000-0000-0000-000000000010', '9876543210', 'Jagannath Seva Group', '[{"name": "Jagannath Das", "phone_number": "9876543210"}, {"name": "Subhadra Devi", "phone_number": "9876543290"}, {"name": "Baladev", "phone_number": ""}]'::jsonb, FALSE),
-('d1000000-0000-0000-0000-000000000011', '9876543211', 'Keshav Kripa Group', '[{"name": "Keshav Das", "phone_number": "9876543211"}, {"name": "Gandhari Devi", "phone_number": ""}]'::jsonb, FALSE),
-('d1000000-0000-0000-0000-000000000012', '9876543212', 'Murari Gupta Group', '[{"name": "Murari Das", "phone_number": "9876543212"}, {"name": "Saraswati Devi", "phone_number": ""}, {"name": "Madhu", "phone_number": ""}]'::jsonb, FALSE),
-('d1000000-0000-0000-0000-000000000013', '9876543213', 'Narayan Smaran Group', '[{"name": "Narayan Das", "phone_number": "9876543213"}, {"name": "Lakshmi Devi", "phone_number": ""}]'::jsonb, FALSE),
-('d1000000-0000-0000-0000-000000000014', '9876543214', 'Radha Raman Group', '[{"name": "Radha Raman Das", "phone_number": "9876543214"}, {"name": "Chandravati Devi", "phone_number": ""}, {"name": "Keshava", "phone_number": ""}]'::jsonb, FALSE),
-('d1000000-0000-0000-0000-000000000015', '9876543215', 'Syamasundar Group', '[{"name": "Syama Das", "phone_number": "9876543215"}, {"name": "Ananga Devi", "phone_number": ""}]'::jsonb, FALSE),
-('d1000000-0000-0000-0000-000000000016', '9876543216', 'Vrindavan Das Group', '[{"name": "Vrindavan Das", "phone_number": "9876543216"}, {"name": "Jahnava Devi", "phone_number": ""}, {"name": "Balaram", "phone_number": ""}]'::jsonb, FALSE),
-('d1000000-0000-0000-0000-000000000017', '9876543217', 'Bhakti Vinod Group', '[{"name": "Bhakti Das", "phone_number": "9876543217"}, {"name": "Bimala Devi", "phone_number": ""}]'::jsonb, FALSE),
-('d1000000-0000-0000-0000-000000000018', '9876543218', 'Gopinath Charan Group', '[{"name": "Gopinath Das", "phone_number": "9876543218"}, {"name": "Hemalata Devi", "phone_number": ""}, {"name": "Sudama", "phone_number": ""}]'::jsonb, FALSE),
-('d1000000-0000-0000-0000-000000000019', '9876543219', 'Rasik Murari Group', '[{"name": "Rasik Das", "phone_number": "9876543219"}, {"name": "Indulekha Devi", "phone_number": ""}]'::jsonb, FALSE),
-('d1000000-0000-0000-0000-000000000020', '9876543220', 'Vrajendranandan Group', '[{"name": "Vraja Das", "phone_number": "9876543220"}, {"name": "Champakalata Devi", "phone_number": ""}, {"name": "Govardhan", "phone_number": ""}]'::jsonb, FALSE),
-('d1000000-0000-0000-0000-000000000021', '9876543221', 'Baladev Bhakti Group', '[{"name": "Baladev Das", "phone_number": "9876543221"}, {"name": "Revati Devi", "phone_number": ""}]'::jsonb, FALSE),
-('d1000000-0000-0000-0000-000000000022', '9876543222', 'Advaita Acharya Group', '[{"name": "Advaita Das", "phone_number": "9876543222"}, {"name": "Sita Devi (Advaita)", "phone_number": ""}]'::jsonb, FALSE),
-('d1000000-0000-0000-0000-000000000023', '9876543223', 'Srivas Pandit Group', '[{"name": "Srivas Das", "phone_number": "9876543223"}, {"name": "Malini Devi", "phone_number": ""}, {"name": "Narayani", "phone_number": ""}]'::jsonb, FALSE),
-('d1000000-0000-0000-0000-000000000024', '9876543224', 'Gadadhar Seva Group', '[{"name": "Gadadhar Das", "phone_number": "9876543224"}, {"name": "Tungavidya Devi", "phone_number": ""}]'::jsonb, FALSE),
-('d1000000-0000-0000-0000-000000000025', '9876543225', 'Sanatan Goswami Group', '[{"name": "Sanatan Das", "phone_number": "9876543225"}, {"name": "Chitra Devi", "phone_number": ""}]'::jsonb, FALSE),
-('d1000000-0000-0000-0000-000000000026', '9876543226', 'Rupa Goswami Group', '[{"name": "Rupa Das", "phone_number": "9876543226"}, {"name": "Sudevi Devi", "phone_number": ""}, {"name": "Jiva", "phone_number": ""}]'::jsonb, FALSE),
-('d1000000-0000-0000-0000-000000000027', '9876543227', 'Raghunath Bhatta Group', '[{"name": "Raghunath Das", "phone_number": "9876543227"}, {"name": "Rangadevi Devi", "phone_number": ""}]'::jsonb, FALSE),
-('d1000000-0000-0000-0000-000000000028', '9876543228', 'Gopal Bhatta Group', '[{"name": "Gopal Bhatta Das", "phone_number": "9876543228"}, {"name": "Gauri Devi", "phone_number": ""}]'::jsonb, FALSE),
-('d1000000-0000-0000-0000-000000000029', '9876543229', 'Loknath Seva Group', '[{"name": "Loknath Das", "phone_number": "9876543229"}, {"name": "Kalavati Devi", "phone_number": ""}]'::jsonb, FALSE),
-('d1000000-0000-0000-0000-000000000030', '9876543230', 'Narottam Das Group', '[{"name": "Narottam Das", "phone_number": "9876543230"}, {"name": "Anuradha Devi", "phone_number": ""}, {"name": "Madhur", "phone_number": ""}]'::jsonb, FALSE)
-ON CONFLICT (phone_number) DO NOTHING;
+('d1000000-0000-0000-0000-000000000001', '8277487290', 'Gopalkrishna Prabhuji', '[{"name": "Gopalkrishna Prabhuji", "phone_number": "8277487290"}]'::jsonb, TRUE),
+('d1000000-0000-0000-0000-000000000002', '9923369579', 'Giridhar Prabhuji', '[{"name": "Giridhar Prabhuji", "phone_number": "9923369579"}]'::jsonb, FALSE),
+('d1000000-0000-0000-0000-000000000003', '9912206523', 'BrahmaLeela Mataji', '[{"name": "BrahmaLeela Mataji", "phone_number": "9912206523"}, {"name": "Saloni Mataji", "phone_number": "8429289590"}]'::jsonb, FALSE),
+('d1000000-0000-0000-0000-000000000004', '8977333687', 'Shiv Sagar Prabhuji', '[{"name": "Shiv Sagar Prabhuji", "phone_number": "8977333687"}, {"name": "Anusha S Mataji", "phone_number": "7661942489"}]'::jsonb, FALSE),
+('d1000000-0000-0000-0000-000000000005', '9840286639', 'Lokesh Prabhuji', '[{"name": "Lokesh Prabhuji", "phone_number": "9840286639"}, {"name": "Kavya Mataji", "phone_number": "7661098899"}]'::jsonb, FALSE),
+('d1000000-0000-0000-0000-000000000006', '7893894239', 'Krishna Kishore Prabhuji', '[{"name": "Krishna Kishore Prabhuji", "phone_number": "7893894239"}, {"name": "Sripadh Prabhuji", "phone_number": "9500180593"}]'::jsonb, FALSE),
+('d1000000-0000-0000-0000-000000000007', '9704090561', 'Maheedhar Prabhuji', '[{"name": "Maheedhar Prabhuji", "phone_number": "9704090561"}]'::jsonb, FALSE),
+('d1000000-0000-0000-0000-000000000008', '9677163570', 'Varun Prabhuji', '[{"name": "Varun Prabhuji", "phone_number": "9677163570"}, {"name": "Manisha Mataji", "phone_number": "9908591999"}]'::jsonb, FALSE),
+('d1000000-0000-0000-0000-000000000009', '9381002799', 'Sai Dheeraj Prabhuji', '[{"name": "Sai Dheeraj Prabhuji", "phone_number": "9381002799"}, {"name": "Mukesh Prabhuji", "phone_number": "9391953459"}]'::jsonb, FALSE),
+('d1000000-0000-0000-0000-000000000010', '8682845231', 'Sreenivas Prabhuji', '[{"name": "Sreenivas Prabhuji", "phone_number": "8682845231"}, {"name": "Vishnu Priyanka Mataji", "phone_number": "9640596992"}]'::jsonb, FALSE),
+('d1000000-0000-0000-0000-000000000011', '9884179297', 'Teja Prabhuji', '[{"name": "Teja Prabhuji", "phone_number": "9884179297"}, {"name": "Surakshita Mataji", "phone_number": "7675098809"}]'::jsonb, FALSE),
+('d1000000-0000-0000-0000-000000000012', '7013671868', 'Ruthvik Prabhuji', '[{"name": "Ruthvik Prabhuji", "phone_number": "7013671868"}, {"name": "Nehal Mataji", "phone_number": "7057990056"}]'::jsonb, FALSE),
+('d1000000-0000-0000-0000-000000000013', '8056019447', 'Teja Siva Prabhuji', '[{"name": "Teja Siva Prabhuji", "phone_number": "8056019447"}, {"name": "Anusha K Mataji", "phone_number": "9182673212"}]'::jsonb, FALSE),
+('d1000000-0000-0000-0000-000000000014', '9493239649', 'HG Sitanath Prabhuji', '[{"name": "HG Sitanath Prabhuji", "phone_number": "9493239649"}]'::jsonb, FALSE)
+ON CONFLICT (id) DO UPDATE SET 
+    phone_number = EXCLUDED.phone_number,
+    group_name = EXCLUDED.group_name,
+    family_members = EXCLUDED.family_members,
+    is_admin = EXCLUDED.is_admin;
 
 -- Supabase Storage Bucket Setup (Create 'bills' bucket for receipt uploads)
 INSERT INTO storage.buckets (id, name, public) 
