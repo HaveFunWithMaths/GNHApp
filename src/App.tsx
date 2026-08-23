@@ -12,10 +12,10 @@ import { AdminPinModal } from './components/auth/AdminPinModal';
 import { ToastContainer } from './components/common/Toast';
 
 export const App: React.FC = () => {
-  const { activeTab, activeDevotee, guestName } = useApp();
+  const { activeTab, activeDevotee, guestName, isAdmin } = useApp();
 
-  // If not logged in and not accessing admin directly with valid session, show dedicated Login Page
-  const isAuthenticated = Boolean(activeDevotee || guestName || activeTab === 'admin');
+  // If not logged in and not authenticated as admin, show dedicated Login Page
+  const isAuthenticated = Boolean(activeDevotee || guestName || (activeTab === 'admin' && isAdmin));
 
   if (!isAuthenticated) {
     return (

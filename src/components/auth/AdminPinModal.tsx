@@ -120,9 +120,7 @@ export const AdminPinModal: React.FC = () => {
               {digit}
             </button>
           ))}
-          <div className="flex items-center justify-center">
-            <span className="text-[10px] text-slate-400 font-mono">PIN: 192108</span>
-          </div>
+          <div />
           <button
             type="button"
             onClick={() => handleKeyPress('0')}

@@ -63,7 +63,7 @@ export const AdminPage: React.FC = () => {
     autoFillCounts,
     updatePrasadamCount,
     saveDevotee,
-    adminPin,
+    deleteDevotee,
     updateAdminPin,
     communityCostPerMember,
     updateCommunityCostPerMember,
@@ -183,7 +183,7 @@ export const AdminPage: React.FC = () => {
           Admin Authorization Required
         </h2>
         <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
-          Enter the 6-digit administrative security PIN (Default: <code className="bg-amber-500/15 px-1.5 py-0.5 rounded font-mono font-bold text-amber-600 dark:text-amber-400">192108</code>) to access master matrix, settlement approvals, and exporter tools.
+          Enter the 6-digit administrative security PIN to access master matrix, settlement approvals, and exporter tools.
         </p>
         <Button
           onClick={() => setIsAdminPinModalOpen(true)}
@@ -230,7 +230,14 @@ export const AdminPage: React.FC = () => {
     e.preventDefault();
     if (!settlingDevotee) return;
     const amountNum = parseFloat(directSettleAmount);
-    if (isNaN(amountNum)) return;
+    if (isNaN(amountNum) || amountNum <= 0) {
+      showToast({
+        type: 'error',
+        title: 'Invalid Amount',
+        message: 'Please enter a valid settlement amount greater than 0.',
+      });
+      return;
+    }
 
     await adminVerifySettlement(
       settlingDevotee.devotee.id,
@@ -267,7 +274,15 @@ export const AdminPage: React.FC = () => {
 
   const handleSaveDevoteeSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!devoteeGroupName.trim() || !devoteePhone.trim()) return;
+    const cleanPhone = cleanPhoneNumber(devoteePhone);
+    if (!devoteeGroupName.trim() || cleanPhone.length !== 10) {
+      showToast({
+        type: 'error',
+        title: 'Invalid Input',
+        message: 'Please enter a valid group name and 10-digit mobile number.',
+      });
+      return;
+    }
 
     const validMembers: FamilyMember[] = familyRows
       .filter(r => r.name.trim().length > 0)
@@ -277,7 +292,7 @@ export const AdminPage: React.FC = () => {
       }));
 
     await saveDevotee({
-      id: editingDevotee?.id || `d-${Date.now()}`,
+      id: editingDevotee?.id || undefined as any,
       group_name: devoteeGroupName.trim(),
       phone_number: devoteePhone.trim(),
       family_members:
@@ -293,8 +308,12 @@ export const AdminPage: React.FC = () => {
   // Handle Admin PIN update
   const handleUpdatePin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (newPinInput.length !== 6) {
-      alert('Admin PIN must be exactly 6 digits.');
+    if (!/^\d{6}$/.test(newPinInput)) {
+      showToast({
+        type: 'error',
+        title: 'Invalid PIN',
+        message: 'Admin PIN must be exactly 6 numeric digits.',
+      });
       return;
     }
     await updateAdminPin(newPinInput);
@@ -1072,53 +1091,78 @@ export const AdminPage: React.FC = () => {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-            {devotees.map(d => {
-              const displayName = formatDevoteeName(d);
-              const hasMultiple = d.family_members && d.family_members.length > 1;
+            {devotees
+              .filter(d => {
+                if (!searchTerm.trim()) return true;
+                const term = searchTerm.toLowerCase();
+                const name = (d.group_name || '').toLowerCase();
+                const phone = (d.phone_number || '').toLowerCase();
+                const members = getFamilyMemberNames(d).join(' ').toLowerCase();
+                return name.includes(term) || phone.includes(term) || members.includes(term);
+              })
+              .map(d => {
+                const displayName = formatDevoteeName(d);
+                const hasMultiple = d.family_members && d.family_members.length > 1;
 
-              return (
-                <Card key={d.id} className="p-4 border border-slate-200 dark:border-slate-800 flex flex-col justify-between">
-                  <div>
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-sm text-slate-900 dark:text-white truncate">
-                        {displayName}
-                      </span>
-                      {d.is_admin && <Badge variant="saffron" size="sm">Admin</Badge>}
-                    </div>
-                    <div className="text-xs font-mono text-slate-500 mt-1">
-                      📱 {d.phone_number}
-                    </div>
-                    {hasMultiple && (
-                      <div className="text-xs text-slate-600 dark:text-slate-400 mt-2">
-                        <strong>Family:</strong> {formatDevoteeFamilyDisplay(d, true)}
+                return (
+                  <Card key={d.id} className="p-4 border border-slate-200 dark:border-slate-800 flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-sm text-slate-900 dark:text-white truncate">
+                          {displayName}
+                        </span>
+                        {d.is_admin && <Badge variant="saffron" size="sm">Admin</Badge>}
                       </div>
-                    )}
-                  </div>
+                      <div className="text-xs font-mono text-slate-500 mt-1">
+                        📱 {d.phone_number}
+                      </div>
+                      {hasMultiple && (
+                        <div className="text-xs text-slate-600 dark:text-slate-400 mt-2">
+                          <strong>Family:</strong> {formatDevoteeFamilyDisplay(d, true)}
+                        </div>
+                      )}
+                    </div>
 
-                  <div className="mt-4 pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
-                    <Button
-                      onClick={() => selectDevoteeAndRedirect(d, 'reports')}
-                      variant="ghost"
-                      size="sm"
-                      className="text-xs py-1 text-slate-600 dark:text-slate-300"
-                    >
-                      <ExternalLink className="w-3 h-3 mr-1" />
-                      <span>View Page</span>
-                    </Button>
+                    <div className="mt-4 pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-1">
+                      <Button
+                        onClick={() => selectDevoteeAndRedirect(d, 'reports')}
+                        variant="ghost"
+                        size="sm"
+                        className="text-xs py-1 px-2 text-slate-600 dark:text-slate-300"
+                      >
+                        <ExternalLink className="w-3 h-3 mr-1" />
+                        <span>View</span>
+                      </Button>
 
-                    <Button
-                      onClick={() => handleOpenDevoteeModal(d)}
-                      variant="ghost"
-                      size="sm"
-                      className="text-xs py-1 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/40"
-                    >
-                      <Edit className="w-3 h-3 mr-1" />
-                      <span>Edit</span>
-                    </Button>
-                  </div>
-                </Card>
-              );
-            })}
+                      <div className="flex items-center gap-1">
+                        <Button
+                          onClick={() => handleOpenDevoteeModal(d)}
+                          variant="ghost"
+                          size="sm"
+                          className="text-xs py-1 px-2 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/40"
+                        >
+                          <Edit className="w-3 h-3 mr-1" />
+                          <span>Edit</span>
+                        </Button>
+
+                        <Button
+                          onClick={() => {
+                            if (confirm(`Are you sure you want to remove devotee "${displayName}"?`)) {
+                              deleteDevotee(d.id);
+                            }
+                          }}
+                          variant="ghost"
+                          size="sm"
+                          className="text-xs py-1 px-1.5 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40"
+                          title="Delete Devotee"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </Button>
+                      </div>
+                    </div>
+                  </Card>
+                );
+              })}
           </div>
         </div>
       )}
@@ -1162,7 +1206,7 @@ export const AdminPage: React.FC = () => {
               <span>Change 6-Digit Admin PIN</span>
             </h4>
             <p className="text-xs text-slate-400 mb-3">
-              Current PIN: <code className="font-mono font-bold text-amber-500">{adminPin}</code> (Default: 192108)
+              Enter a new 6-digit numeric PIN to update administrative authorization.
             </p>
             <form onSubmit={handleUpdatePin} className="flex gap-2">
               <input

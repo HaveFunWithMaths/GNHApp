@@ -96,8 +96,12 @@ class StorageService {
       try {
         const { data, error } = await supabase.from('devotees').select('*').order('group_name');
         if (!error && data && data.length > 0) {
-          localStorage.setItem(STORAGE_KEYS.DEVOTEES, JSON.stringify(data));
-          return data as Devotee[];
+          const normalized = data.map((d: any) => ({
+            ...d,
+            family_members: normalizeFamilyMembers(d),
+          }));
+          localStorage.setItem(STORAGE_KEYS.DEVOTEES, JSON.stringify(normalized));
+          return normalized as Devotee[];
         }
       } catch (err) {
         console.warn('Supabase getDevotees failed, using localStorage fallback', err);
@@ -114,33 +118,116 @@ class StorageService {
 
   async saveDevotee(devotee: Devotee): Promise<Devotee> {
     const devotees = await this.getDevotees();
-    const index = devotees.findIndex(d => d.id === devotee.id || d.phone_number === devotee.phone_number);
-    let updated: Devotee[];
+    const cleanPhone = devotee.phone_number.replace(/\D/g, '').slice(-10);
+    const index = devotees.findIndex(d => (devotee.id && d.id === devotee.id) || d.phone_number === cleanPhone);
 
+    const isValidUUID = (str?: string | null) =>
+      Boolean(str && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str));
+
+    const existingId = index >= 0 ? devotees[index].id : undefined;
+    const resolvedId = (devotee.id && isValidUUID(devotee.id))
+      ? devotee.id
+      : (existingId && isValidUUID(existingId) ? existingId : generateUUID());
+
+    const record: Devotee = {
+      ...devotee,
+      id: resolvedId,
+      phone_number: cleanPhone,
+      group_name: devotee.group_name.trim(),
+      family_members: normalizeFamilyMembers(devotee),
+      is_admin: Boolean(devotee.is_admin),
+      created_at: index >= 0 ? (devotees[index].created_at || new Date().toISOString()) : new Date().toISOString(),
+    };
+
+    let updated: Devotee[];
     if (index >= 0) {
       updated = [...devotees];
-      updated[index] = { ...updated[index], ...devotee };
+      updated[index] = record;
     } else {
-      const newDevotee = {
-        ...devotee,
-        id: devotee.id || generateUUID(),
-        created_at: new Date().toISOString(),
-      };
-      updated = [...devotees, newDevotee];
+      updated = [...devotees, record];
     }
 
     localStorage.setItem(STORAGE_KEYS.DEVOTEES, JSON.stringify(updated));
 
     if (isSupabaseConfigured() && supabase) {
       try {
-        await supabase.from('devotees').upsert(devotee);
+        const payload: Record<string, any> = {
+          phone_number: record.phone_number,
+          group_name: record.group_name,
+          family_members: record.family_members,
+          is_admin: record.is_admin,
+          created_at: record.created_at,
+        };
+
+        if (record.id && isValidUUID(record.id)) {
+          payload.id = record.id;
+        }
+
+        const { data, error } = await supabase
+          .from('devotees')
+          .upsert(payload, { onConflict: 'phone_number' })
+          .select()
+          .single();
+
+        if (!error && data) {
+          record.id = data.id;
+          const latestRaw = localStorage.getItem(STORAGE_KEYS.DEVOTEES);
+          const latestDevotees: Devotee[] = latestRaw ? JSON.parse(latestRaw) : [];
+          const idx = latestDevotees.findIndex(d => d.phone_number === record.phone_number);
+          if (idx >= 0) {
+            latestDevotees[idx] = { ...latestDevotees[idx], id: data.id };
+            localStorage.setItem(STORAGE_KEYS.DEVOTEES, JSON.stringify(latestDevotees));
+          }
+        } else if (error) {
+          console.warn('Supabase saveDevotee error:', error.message || error);
+        }
       } catch (err) {
-        console.warn('Supabase saveDevotee sync error', err);
+        console.warn('Supabase saveDevotee sync exception', err);
       }
     }
 
     this.notifySubscribers();
-    return devotee;
+    return record;
+  }
+
+  async deleteDevotee(devoteeId: string): Promise<void> {
+    const devotees = await this.getDevotees();
+    const updatedDevotees = devotees.filter(d => d.id !== devoteeId);
+    localStorage.setItem(STORAGE_KEYS.DEVOTEES, JSON.stringify(updatedDevotees));
+
+    // Cascade delete related records locally
+    const rawCounts = localStorage.getItem(STORAGE_KEYS.PRASADAM_COUNTS);
+    if (rawCounts) {
+      const counts: PrasadamCount[] = JSON.parse(rawCounts);
+      localStorage.setItem(STORAGE_KEYS.PRASADAM_COUNTS, JSON.stringify(counts.filter(c => c.devotee_id !== devoteeId)));
+    }
+
+    const rawExpenses = localStorage.getItem(STORAGE_KEYS.EXPENSES);
+    if (rawExpenses) {
+      const expenses: Expense[] = JSON.parse(rawExpenses);
+      localStorage.setItem(STORAGE_KEYS.EXPENSES, JSON.stringify(expenses.filter(e => e.devotee_id !== devoteeId)));
+    }
+
+    const rawLedgers = localStorage.getItem(STORAGE_KEYS.MONTHLY_LEDGERS);
+    if (rawLedgers) {
+      const ledgers: MonthlyLedger[] = JSON.parse(rawLedgers);
+      localStorage.setItem(STORAGE_KEYS.MONTHLY_LEDGERS, JSON.stringify(ledgers.filter(l => l.devotee_id !== devoteeId)));
+    }
+
+    if (isSupabaseConfigured() && supabase) {
+      try {
+        await Promise.allSettled([
+          supabase.from('prasadam_counts').delete().eq('devotee_id', devoteeId),
+          supabase.from('expenses').delete().eq('devotee_id', devoteeId),
+          supabase.from('monthly_ledgers').delete().eq('devotee_id', devoteeId),
+          supabase.from('devotees').delete().eq('id', devoteeId),
+        ]);
+      } catch (err) {
+        console.warn('Supabase deleteDevotee cascade error', err);
+      }
+    }
+
+    this.notifySubscribers();
   }
 
   // --- PRASADAM COUNTS ---
@@ -149,7 +236,10 @@ class StorageService {
       try {
         let query = supabase.from('prasadam_counts').select('*');
         if (cycleMonth) {
-          query = query.gte('date', `${cycleMonth}-01`).lte('date', `${cycleMonth}-31`);
+          const [yStr, mStr] = cycleMonth.split('-');
+          const lastDay = new Date(parseInt(yStr, 10), parseInt(mStr, 10), 0).getDate();
+          const lastDayStr = lastDay.toString().padStart(2, '0');
+          query = query.gte('date', `${cycleMonth}-01`).lte('date', `${cycleMonth}-${lastDayStr}`);
         }
         const { data, error } = await query;
         if (!error && data) {
@@ -301,8 +391,9 @@ class StorageService {
 
       monthDates.forEach(dateStr => {
         const existing = existingDateMap.get(dateStr);
-        // If completely missing or 0 counts across all slots and not yet auto-filled
-        if (!existing || (existing.breakfast_count === 0 && existing.lunch_count === 0 && existing.dinner_count === 0 && !existing.is_auto_filled)) {
+        // Only auto-fill if completely unrecorded or if it was previously auto-filled
+        // Explicit 0-count entries (e.g. fasting days) entered by the user are preserved
+        if (!existing || existing.is_auto_filled) {
           newCountsToSave.push({
             id: existing?.id || `cnt-${devotee.id}-${dateStr}`,
             devotee_id: devotee.id,
@@ -379,13 +470,13 @@ class StorageService {
 
     if (isSupabaseConfigured() && supabase) {
       try {
-        const { error } = await supabase.from('expenses').insert(newExpense);
+        const { error } = await supabase.from('expenses').upsert(newExpense, { onConflict: 'id' });
         if (error) {
           console.warn('Supabase saveExpense error, trying fallback without date:', error);
           // If remote table schema doesn't have 'date' column yet, fallback to inserting without 'date'
           if (error.message?.includes('date') || error.details?.includes('date') || error.code === '42703') {
             const { date, ...withoutDate } = newExpense;
-            await supabase.from('expenses').insert(withoutDate);
+            await supabase.from('expenses').upsert(withoutDate, { onConflict: 'id' });
           }
         }
       } catch (err) {
@@ -621,15 +712,16 @@ class StorageService {
 
     for (const item of summaries) {
       const existingNext = nextMap.get(item.devoteeId);
+      const hasExistingSettlement = Boolean(existingNext && existingNext.settlement_amount_reported > 0);
       const updated: MonthlyLedger = {
         id: existingNext?.id,
         devotee_id: item.devoteeId,
         cycle_month: nextMonth,
         carried_forward_amount: Number(item.finalBalance || 0), // roll forward final balance
-        settlement_amount_reported: 0,
-        settlement_date_reported: null,
-        settlement_status: 'UNSETTLED',
-        admin_notes: `Carried forward ₹${item.finalBalance} from ${currentMonth}`,
+        settlement_amount_reported: hasExistingSettlement ? existingNext!.settlement_amount_reported : 0,
+        settlement_date_reported: hasExistingSettlement ? existingNext!.settlement_date_reported : null,
+        settlement_status: hasExistingSettlement ? existingNext!.settlement_status : 'UNSETTLED',
+        admin_notes: existingNext?.admin_notes || `Carried forward ₹${item.finalBalance} from ${currentMonth}`,
       };
       await this.saveMonthlyLedger(updated);
     }

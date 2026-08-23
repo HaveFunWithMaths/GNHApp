@@ -61,6 +61,15 @@ export const JanmashtamiPage: React.FC = () => {
     setExpenseDate(getDefaultExpenseDate(activeMonth));
   }, [activeMonth]);
 
+  // Cleanup preview object URL on unmount
+  React.useEffect(() => {
+    return () => {
+      if (receiptPreview) {
+        URL.revokeObjectURL(receiptPreview);
+      }
+    };
+  }, [receiptPreview]);
+
   // Filter only Janmashtami expenses
   const allJanmashtamiExpenses = expenses.filter(
     (e: Expense) => e.type === 'JANMASHTAMI'
@@ -69,7 +78,7 @@ export const JanmashtamiPage: React.FC = () => {
   const myJanmashtamiExpenses = allJanmashtamiExpenses.filter((e: Expense) =>
     activeDevotee
       ? e.devotee_id === activeDevotee.id
-      : (guestName ? e.guest_name === guestName : true)
+      : (guestName ? e.guest_name === guestName : false)
   );
 
   const totalJanmashtamiFund = allJanmashtamiExpenses
@@ -91,6 +100,10 @@ export const JanmashtamiPage: React.FC = () => {
         message: 'Receipt attachment must be less than 10 MB.',
       });
       return;
+    }
+
+    if (receiptPreview) {
+      URL.revokeObjectURL(receiptPreview);
     }
 
     setReceiptFile(file);
@@ -156,11 +169,14 @@ export const JanmashtamiPage: React.FC = () => {
         status: 'APPROVED',
       });
 
-      // Reset form
+      // Reset form & revoke preview URL
       setExpenseTitle('');
       setExpenseAmount('');
       setExpenseComments('');
       setReceiptFile(null);
+      if (receiptPreview) {
+        URL.revokeObjectURL(receiptPreview);
+      }
       setReceiptPreview(null);
       setExpenseDate(getDefaultExpenseDate(activeMonth));
       setPayerName(getDefaultPayer());

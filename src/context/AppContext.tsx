@@ -71,6 +71,7 @@ interface AppContextType {
   adminResetSettlement: (devoteeId: string) => Promise<void>;
   carryOverBalances: (nextMonth: string) => Promise<number>;
   saveDevotee: (devotee: Devotee) => Promise<void>;
+  deleteDevotee: (devoteeId: string) => Promise<void>;
   refreshData: () => Promise<void>;
   resetDatabase: () => void;
 }
@@ -256,6 +257,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setLoggedInMemberName(match.matchedMemberName || null);
       setGuestName(null);
       storageService.setActivePhone(match.matchedPhone);
+      storageService.setActiveGuest(null);
       updateUrlParams(activeTab, activeMonth, match.matchedPhone, null);
       
       const welcomeTitle = match.matchedMemberName && !match.isPrimary
@@ -280,6 +282,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setLoggedInMemberName(null);
     setGuestName(null);
     storageService.setActivePhone(devotee.phone_number);
+    storageService.setActiveGuest(null);
     setActiveTabState(targetTab);
     updateUrlParams(targetTab, activeMonth, devotee.phone_number, null);
     showToast({
@@ -295,6 +298,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setActiveDevotee(null);
     setLoggedInMemberName(null);
     storageService.setActivePhone(null);
+    storageService.setActiveGuest(cleanName);
     updateUrlParams(activeTab, activeMonth, null, cleanName);
     showToast({
       type: 'info',
@@ -501,11 +505,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const saveDevotee = async (devotee: Devotee) => {
-    await storageService.saveDevotee(devotee);
+    const saved = await storageService.saveDevotee(devotee);
+    setDevotees(prev => {
+      const idx = prev.findIndex(d => (saved.id && d.id === saved.id) || d.phone_number === saved.phone_number);
+      if (idx >= 0) {
+        const updated = [...prev];
+        updated[idx] = saved;
+        return updated;
+      }
+      return [...prev, saved];
+    });
     showToast({
       type: 'success',
       title: 'Devotee Saved',
-      message: `${devotee.group_name} updated successfully.`,
+      message: `${devotee.group_name} saved successfully.`,
+    });
+  };
+
+  const deleteDevotee = async (devoteeId: string) => {
+    await storageService.deleteDevotee(devoteeId);
+    setDevotees(prev => prev.filter(d => d.id !== devoteeId));
+    showToast({
+      type: 'warning',
+      title: 'Devotee Removed',
+      message: 'Devotee has been removed.',
     });
   };
 
@@ -576,6 +599,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         adminResetSettlement,
         carryOverBalances,
         saveDevotee,
+        deleteDevotee,
         refreshData,
         resetDatabase,
       }}

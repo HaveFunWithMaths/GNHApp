@@ -23,7 +23,7 @@ export const Modal: React.FC<ModalProps> = ({
 }) => {
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape' && showCloseButton) onClose();
     };
 
     if (isOpen) {
@@ -35,7 +35,7 @@ export const Modal: React.FC<ModalProps> = ({
       document.body.style.overflow = 'unset';
       window.removeEventListener('keydown', handleEscape);
     };
-  }, [isOpen, onClose]);
+  }, [isOpen, onClose, showCloseButton]);
 
   if (!isOpen) return null;
 
@@ -54,7 +54,9 @@ export const Modal: React.FC<ModalProps> = ({
       {/* Backdrop */}
       <div
         className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm transition-opacity animate-fade-in"
-        onClick={onClose}
+        onClick={() => {
+          if (showCloseButton) onClose();
+        }}
       />
 
       {/* Modal Dialog */}

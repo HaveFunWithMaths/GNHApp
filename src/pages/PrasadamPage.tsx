@@ -167,6 +167,15 @@ export const PrasadamPage: React.FC = () => {
     setExpenseDate(getDefaultExpenseDate(activeMonth));
   }, [activeMonth]);
 
+  // Cleanup object URL on unmount
+  useEffect(() => {
+    return () => {
+      if (receiptPreview) {
+        URL.revokeObjectURL(receiptPreview);
+      }
+    };
+  }, [receiptPreview]);
+
   // Handle Receipt photo selection
   const handleReceiptChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -180,6 +189,10 @@ export const PrasadamPage: React.FC = () => {
       });
       e.target.value = '';
       return;
+    }
+
+    if (receiptPreview) {
+      URL.revokeObjectURL(receiptPreview);
     }
 
     try {
@@ -237,11 +250,14 @@ export const PrasadamPage: React.FC = () => {
         cycle_month: expenseDate ? expenseDate.slice(0, 7) : activeMonth,
       });
 
-      // Reset form
+      // Reset form & revoke preview URL
       setExpenseTitle('');
       setExpenseAmount('');
       setExpenseComments('');
       setReceiptFile(null);
+      if (receiptPreview) {
+        URL.revokeObjectURL(receiptPreview);
+      }
       setReceiptPreview(null);
       setExpenseDate(getDefaultExpenseDate(activeMonth));
       setPayerName(getDefaultPayer());
