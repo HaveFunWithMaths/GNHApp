@@ -226,7 +226,9 @@ export function computeDevoteeMonthlySummary(
 
   // Filter regular expenses for this devotee and cycle month
   const devoteeRegularExpenses = allExpenses.filter(
-    e => e.devotee_id === devotee.id && e.cycle_month === cycleMonth && e.type === 'REGULAR'
+    e => e.devotee_id === devotee.id &&
+      (e.cycle_month === cycleMonth || (e.date && e.date.startsWith(cycleMonth))) &&
+      e.type === 'REGULAR'
   );
 
   const approved_expenses = devoteeRegularExpenses
@@ -313,4 +315,15 @@ export function getCurrentCycleMonth(): string {
   const yyyy = now.getFullYear();
   const mm = (now.getMonth() + 1).toString().padStart(2, '0');
   return `${yyyy}-${mm}`;
+}
+
+/**
+ * Get default expense date: defaults to today if in activeMonth, otherwise 1st of activeMonth
+ */
+export function getDefaultExpenseDate(activeMonth?: string): string {
+  const today = new Date().toISOString().slice(0, 10);
+  if (!activeMonth || today.startsWith(activeMonth)) {
+    return today;
+  }
+  return `${activeMonth}-01`;
 }

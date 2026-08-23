@@ -33,6 +33,7 @@ export interface Expense {
   id: string;
   devotee_id: string | null;
   guest_name?: string | null;
+  date?: string; // 'YYYY-MM-DD' Expense Date
   type: ExpenseType;
   payer_name: string;
   title: string;

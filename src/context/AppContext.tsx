@@ -400,6 +400,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const submitExpense = async (expense: Omit<Expense, 'id' | 'created_at'>): Promise<Expense> => {
     const saved = await storageService.saveExpense(expense);
+    setExpenses(prev => [saved, ...prev.filter(e => e.id !== saved.id)]);
     showToast({
       type: 'success',
       title: 'Expense Logged',
@@ -410,6 +411,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const reviewExpense = async (id: string, status: 'APPROVED' | 'REJECTED', reason?: string) => {
     await storageService.updateExpenseStatus(id, status, reason);
+    setExpenses(prev =>
+      prev.map(e =>
+        e.id === id
+          ? {
+              ...e,
+              status,
+              rejection_reason: status === 'REJECTED' ? reason || 'Rejected by Admin' : null,
+            }
+          : e
+      )
+    );
     showToast({
       type: status === 'APPROVED' ? 'success' : 'warning',
       title: `Expense ${status}`,

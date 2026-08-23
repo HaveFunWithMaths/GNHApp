@@ -112,8 +112,9 @@ export const ReportsPage: React.FC = () => {
 
   // Filter devotee-specific expenses
   const devoteeExpenses: Expense[] = expenses.filter(
-    (e: Expense) => (activeDevotee ? e.devotee_id === activeDevotee.id : e.guest_name === guestName) &&
-      (e.cycle_month === activeMonth || e.type === 'JANMASHTAMI')
+    (e: Expense) =>
+      (activeDevotee ? e.devotee_id === activeDevotee.id : (guestName ? e.guest_name === guestName : true)) &&
+      (e.cycle_month === activeMonth || (e.date && e.date.startsWith(activeMonth)) || e.type === 'JANMASHTAMI')
   );
 
   const regularExpenses: Expense[] = devoteeExpenses.filter((e: Expense) => e.type === 'REGULAR');
@@ -406,7 +407,7 @@ export const ReportsPage: React.FC = () => {
                     {exp.title}
                   </div>
                   <div className="text-slate-400 text-[11px]">
-                    By {exp.payer_name} • {exp.created_at.slice(0, 10)}
+                    By {exp.payer_name} • {exp.date || exp.created_at.slice(0, 10)}
                   </div>
                 </div>
                 <div className="flex items-center gap-3">

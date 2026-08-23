@@ -30,6 +30,17 @@ const DEFAULT_CONFIG: Record<string, string> = {
   community_cost_per_member: '500',
 };
 
+function generateUUID(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
 class StorageService {
   private initialized = false;
 
@@ -112,7 +123,7 @@ class StorageService {
     } else {
       const newDevotee = {
         ...devotee,
-        id: devotee.id || `d-${Date.now()}`,
+        id: devotee.id || generateUUID(),
         created_at: new Date().toISOString(),
       };
       updated = [...devotees, newDevotee];
@@ -323,7 +334,12 @@ class StorageService {
         }
         const { data, error } = await query;
         if (!error && data) {
-          return data as Expense[];
+          const mapped: Expense[] = data.map((d: any) => ({
+            ...d,
+            date: d.date || (d.created_at ? d.created_at.slice(0, 10) : undefined),
+          }));
+          localStorage.setItem(STORAGE_KEYS.EXPENSES, JSON.stringify(mapped));
+          return mapped;
         }
       } catch (err) {
         console.warn('Supabase getExpenses failed, fallback to local', err);
@@ -332,17 +348,28 @@ class StorageService {
 
     const raw = localStorage.getItem(STORAGE_KEYS.EXPENSES);
     const expenses: Expense[] = raw ? JSON.parse(raw) : [];
+    const normalized: Expense[] = expenses.map(e => ({
+      ...e,
+      date: e.date || (e.created_at ? e.created_at.slice(0, 10) : undefined),
+    }));
     if (cycleMonth) {
-      return expenses.filter(e => e.cycle_month === cycleMonth || e.type === 'JANMASHTAMI');
+      return normalized.filter(
+        e => e.cycle_month === cycleMonth || (e.date && e.date.startsWith(cycleMonth)) || e.type === 'JANMASHTAMI'
+      );
     }
-    return expenses;
+    return normalized;
   }
 
   async saveExpense(expense: Omit<Expense, 'id' | 'created_at'> & { id?: string }): Promise<Expense> {
     const allExpenses = await this.getExpenses();
+    const expenseDate = expense.date || new Date().toISOString().slice(0, 10);
+    const cycleMonth = expense.cycle_month || expenseDate.slice(0, 7);
+
     const newExpense: Expense = {
       ...expense,
-      id: expense.id || `exp-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      id: expense.id || generateUUID(),
+      date: expenseDate,
+      cycle_month: cycleMonth,
       created_at: new Date().toISOString(),
       status: expense.status || 'APPROVED',
     };
@@ -352,7 +379,15 @@ class StorageService {
 
     if (isSupabaseConfigured() && supabase) {
       try {
-        await supabase.from('expenses').insert(newExpense);
+        const { error } = await supabase.from('expenses').insert(newExpense);
+        if (error) {
+          console.warn('Supabase saveExpense error, trying fallback without date:', error);
+          // If remote table schema doesn't have 'date' column yet, fallback to inserting without 'date'
+          if (error.message?.includes('date') || error.details?.includes('date') || error.code === '42703') {
+            const { date, ...withoutDate } = newExpense;
+            await supabase.from('expenses').insert(withoutDate);
+          }
+        }
       } catch (err) {
         console.warn('Supabase saveExpense error', err);
       }

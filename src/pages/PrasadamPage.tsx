@@ -20,6 +20,7 @@ import {
   isCutoffPassed,
   getCutoffFormattedDate,
   formatMonthName,
+  getDefaultExpenseDate,
   PRASADAM_RATES,
 } from '../utils/calculations';
 import { getFamilyMemberNames, getPrimaryFamilyMemberName } from '../utils/devoteeHelpers';
@@ -147,6 +148,7 @@ export const PrasadamPage: React.FC = () => {
   }, [loggedInMemberName, activeDevotee, guestName]);
 
   // Expense form state
+  const [expenseDate, setExpenseDate] = useState<string>(() => getDefaultExpenseDate(activeMonth));
   const [payerName, setPayerName] = useState<string>(() => getDefaultPayer());
   const [expenseTitle, setExpenseTitle] = useState<string>('');
   const [expenseAmount, setExpenseAmount] = useState<string>('');
@@ -156,10 +158,14 @@ export const PrasadamPage: React.FC = () => {
   const [isUploadingExpense, setIsUploadingExpense] = useState(false);
   const [viewingReceiptUrl, setViewingReceiptUrl] = useState<string | null>(null);
 
-  // Sync payer name with default whenever devotee/member context changes
+  // Sync payer name & expense date when context changes
   useEffect(() => {
     setPayerName(getDefaultPayer());
   }, [getDefaultPayer]);
+
+  useEffect(() => {
+    setExpenseDate(getDefaultExpenseDate(activeMonth));
+  }, [activeMonth]);
 
   // Handle Receipt photo selection
   const handleReceiptChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -195,6 +201,15 @@ export const PrasadamPage: React.FC = () => {
   // Handle Expense Form Submit
   const handleExpenseSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!expenseDate.trim()) {
+      showToast({
+        type: 'warning',
+        title: 'Expense Date Required',
+        message: 'Please select the date of this expense.',
+      });
+      return;
+    }
+
     const amountNum = parseFloat(expenseAmount);
     if (isNaN(amountNum) || !expenseTitle.trim()) return;
 
@@ -211,6 +226,7 @@ export const PrasadamPage: React.FC = () => {
       await submitExpense({
         devotee_id: activeDevotee?.id || null,
         guest_name: activeDevotee ? null : guestName || 'Guest',
+        date: expenseDate,
         type: 'REGULAR',
         payer_name: resolvedPayer,
         title: expenseTitle.trim(),
@@ -218,7 +234,7 @@ export const PrasadamPage: React.FC = () => {
         comments: expenseComments.trim() || null,
         bill_url: billUrl,
         status: 'APPROVED',
-        cycle_month: activeMonth,
+        cycle_month: expenseDate ? expenseDate.slice(0, 7) : activeMonth,
       });
 
       // Reset form
@@ -227,6 +243,7 @@ export const PrasadamPage: React.FC = () => {
       setExpenseComments('');
       setReceiptFile(null);
       setReceiptPreview(null);
+      setExpenseDate(getDefaultExpenseDate(activeMonth));
       setPayerName(getDefaultPayer());
     } finally {
       setIsUploadingExpense(false);
@@ -235,8 +252,9 @@ export const PrasadamPage: React.FC = () => {
 
   // Filter regular expenses for this devotee/guest
   const regularExpenses: Expense[] = expenses.filter(
-    (e: Expense) => (activeDevotee ? e.devotee_id === activeDevotee.id : e.guest_name === guestName) &&
-      e.cycle_month === activeMonth &&
+    (e: Expense) =>
+      (activeDevotee ? e.devotee_id === activeDevotee.id : (guestName ? e.guest_name === guestName : true)) &&
+      (e.cycle_month === activeMonth || (e.date && e.date.startsWith(activeMonth))) &&
       e.type === 'REGULAR'
   );
 
@@ -519,7 +537,21 @@ export const PrasadamPage: React.FC = () => {
         </div>
 
         <form onSubmit={handleExpenseSubmit} className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Expense Date */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1.5">
+                Expense Date *
+              </label>
+              <input
+                type="date"
+                required
+                value={expenseDate}
+                onChange={e => setExpenseDate(e.target.value)}
+                className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-amber-500 outline-none font-medium"
+              />
+            </div>
+
             {/* Who made expense */}
             <div>
               <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1.5">
@@ -576,7 +608,7 @@ export const PrasadamPage: React.FC = () => {
                 placeholder="e.g. 1450"
                 value={expenseAmount}
                 onChange={e => setExpenseAmount(e.target.value)}
-                className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-amber-500 outline-none"
+                className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-amber-500 outline-none font-semibold"
               />
             </div>
           </div>
@@ -666,7 +698,7 @@ export const PrasadamPage: React.FC = () => {
                 {regularExpenses.map((exp: Expense) => (
                   <tr key={exp.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
                     <td className="py-3 px-3 text-slate-500 font-mono">
-                      {exp.created_at.slice(0, 10)}
+                      {exp.date || exp.created_at.slice(0, 10)}
                     </td>
                     <td className="py-3 px-3">
                       <div className="font-bold text-slate-900 dark:text-white">

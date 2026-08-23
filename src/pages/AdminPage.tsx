@@ -632,7 +632,7 @@ export const AdminPage: React.FC = () => {
                     return (
                       <tr key={exp.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
                         <td className="py-3 px-3 text-slate-500 font-mono">
-                          {exp.created_at.slice(0, 10)}
+                          {exp.date || exp.created_at.slice(0, 10)}
                         </td>
                         <td className="py-3 px-3">
                           <Badge variant={exp.type === 'JANMASHTAMI' ? 'saffron' : 'default'} size="sm">

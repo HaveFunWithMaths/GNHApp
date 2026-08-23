@@ -64,9 +64,9 @@ export function exportToExcel(
 
   // Sheet 3: Expense Ledger
   const expenseData = allExpenses
-    .filter(e => e.cycle_month === cycleMonth || e.type === 'JANMASHTAMI')
+    .filter(e => e.cycle_month === cycleMonth || (e.date && e.date.startsWith(cycleMonth)) || e.type === 'JANMASHTAMI')
     .map(e => ({
-      'Date': e.created_at ? e.created_at.slice(0, 10) : cycleMonth,
+      'Date': e.date || (e.created_at ? e.created_at.slice(0, 10) : cycleMonth),
       'Cycle Month': e.cycle_month,
       'Type': e.type,
       'Group / Guest': e.devotee_id ? countsMap.get(e.devotee_id) : `Guest: ${e.guest_name || 'Anonymous'}`,

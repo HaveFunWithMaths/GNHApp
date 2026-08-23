@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS expenses (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     devotee_id UUID REFERENCES devotees(id) ON DELETE SET NULL,
     guest_name VARCHAR(100),
+    date DATE DEFAULT CURRENT_DATE, -- Expense Date (e.g. 'YYYY-MM-DD')
     type expense_type NOT NULL DEFAULT 'REGULAR',
     payer_name VARCHAR(100) NOT NULL,
     title VARCHAR(255) NOT NULL,
