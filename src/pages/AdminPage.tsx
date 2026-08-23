@@ -58,6 +58,7 @@ export const AdminPage: React.FC = () => {
     selectDevoteeAndRedirect,
     reviewExpense,
     adminVerifySettlement,
+    adminResetSettlement,
     carryOverBalances,
     autoFillCounts,
     updatePrasadamCount,
@@ -72,6 +73,7 @@ export const AdminPage: React.FC = () => {
 
   const [activeAdminTab, setActiveAdminTab] = useState<AdminTab>('matrix');
   const [searchTerm, setSearchTerm] = useState('');
+  const [settlementFilter, setSettlementFilter] = useState<'ALL' | 'PENDING' | 'SETTLED' | 'UNSETTLED'>('ALL');
 
   // Devotee Matrix Drawer / Inline Matrix Modal
   const [selectedDevoteeForEdit, setSelectedDevoteeForEdit] = useState<Devotee | null>(null);
@@ -85,6 +87,20 @@ export const AdminPage: React.FC = () => {
   const [directSettleAmount, setDirectSettleAmount] = useState('');
   const [directSettleDate, setDirectSettleDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [directSettleNotes, setDirectSettleNotes] = useState('');
+
+  const handleOpenDirectSettle = (s: DevoteeMonthlySummary) => {
+    setSettlingDevotee(s);
+    if (s.settlement_reported > 0) {
+      setDirectSettleAmount(s.settlement_reported.toString());
+    } else if (s.final_balance > 0) {
+      setDirectSettleAmount(s.final_balance.toString());
+    } else {
+      const gross = s.prasadam_cost - s.approved_expenses + s.carried_forward;
+      setDirectSettleAmount(gross > 0 ? gross.toString() : '0');
+    }
+    setDirectSettleDate(s.settlement_date_reported || new Date().toISOString().slice(0, 10));
+    setDirectSettleNotes(s.settlement_status === 'SETTLED' ? 'Verified by Admin' : 'Settled via Admin Panel');
+  };
 
   // Devotee Edit/Create Modal
   const [isDevoteeModalOpen, setIsDevoteeModalOpen] = useState(false);
@@ -575,10 +591,7 @@ export const AdminPage: React.FC = () => {
                             </Button>
 
                             <Button
-                              onClick={() => {
-                                setSettlingDevotee(s);
-                                setDirectSettleAmount(s.final_balance.toString());
-                              }}
+                              onClick={() => handleOpenDirectSettle(s)}
                               variant="ghost"
                               size="sm"
                               className="text-[11px] py-1 px-2 text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-950/40"
@@ -716,61 +729,249 @@ export const AdminPage: React.FC = () => {
 
       {/* TAB 3: SETTLEMENT ENGINE */}
       {activeAdminTab === 'settlement' && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-              Pending Devotee Settlement Requests ({pendingSettlementSummaries.length})
-            </h3>
+        <div className="space-y-6">
+          {/* Section 1: Pending Settlement Requests */}
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                  Pending Devotee Settlement Requests ({pendingSettlementSummaries.length})
+                </h3>
+                <p className="text-xs text-slate-400">
+                  Payments reported by devotees awaiting administrator verification.
+                </p>
+              </div>
+            </div>
+
+            {pendingSettlementSummaries.length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {pendingSettlementSummaries.map(s => (
+                  <Card key={s.devotee.id} className="p-4 border-2 border-amber-500/40 bg-amber-50/20 dark:bg-amber-950/20 shadow-xs">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <h4 className="font-bold text-base text-slate-900 dark:text-white">
+                          {formatDevoteeName(s.devotee)}
+                        </h4>
+                        <p className="text-xs text-slate-500 font-mono">📱 +91 {s.devotee.phone_number}</p>
+                      </div>
+                      <Badge variant="warning">Verification Pending</Badge>
+                    </div>
+
+                    <div className="my-3 p-3 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex justify-between items-center text-xs">
+                      <div>
+                        <div className="text-slate-400 font-medium">Reported Paid Amount:</div>
+                        <div className="text-xl font-extrabold text-purple-600 dark:text-purple-400 mt-0.5">
+                          {formatRupee(s.settlement_reported)}
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-slate-400 font-medium">Payment Date:</div>
+                        <div className="font-bold text-slate-700 dark:text-slate-200 mt-0.5">
+                          {s.settlement_date_reported || 'Today'}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex gap-2 pt-1">
+                      <Button
+                        onClick={() => adminVerifySettlement(s.devotee.id, s.settlement_reported, s.settlement_date_reported || new Date().toISOString().slice(0, 10), 'Verified & Approved')}
+                        variant="saffron"
+                        size="sm"
+                        className="flex-1 text-xs"
+                      >
+                        <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
+                        <span>Verify & Settle</span>
+                      </Button>
+
+                      <Button
+                        onClick={() => handleOpenDirectSettle(s)}
+                        variant="outline"
+                        size="sm"
+                        className="text-xs"
+                        title="Edit Amount / Date"
+                      >
+                        <Edit className="w-3.5 h-3.5 mr-1" />
+                        <span>Edit</span>
+                      </Button>
+
+                      <Button
+                        onClick={() => {
+                          if (confirm(`Reject/Reset settlement request for ${formatDevoteeName(s.devotee)}?`)) {
+                            adminResetSettlement(s.devotee.id);
+                          }
+                        }}
+                        variant="ghost"
+                        size="sm"
+                        className="text-xs text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30"
+                        title="Reject & Revert to Unsettled"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 mr-1" />
+                        <span>Reset</span>
+                      </Button>
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            ) : (
+              <Card className="p-6 text-center text-xs text-slate-400 border border-dashed">
+                ✨ No pending settlement verification requests at this time.
+              </Card>
+            )}
           </div>
 
-          {pendingSettlementSummaries.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {pendingSettlementSummaries.map(s => (
-                <Card key={s.devotee.id} className="p-4 border border-amber-500/30 bg-amber-50/20 dark:bg-amber-950/20">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <h4 className="font-bold text-base text-slate-900 dark:text-white">
-                        {formatDevoteeName(s.devotee)}
-                      </h4>
-                      <p className="text-xs text-slate-500">Phone: {s.devotee.phone_number}</p>
-                    </div>
-                    <Badge variant="warning">Verification Pending</Badge>
-                  </div>
+          {/* Section 2: All Devotees Settlement Master Ledger */}
+          <div className="pt-2">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
+              <div>
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                  Devotee Settlements Master Ledger ({formatMonthName(activeMonth)})
+                </h3>
+                <p className="text-xs text-slate-400">
+                  Directly record payments, adjust settlements, or verify balances for any devotee group.
+                </p>
+              </div>
 
-                  <div className="my-3 p-3 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex justify-between items-center text-xs">
-                    <div>
-                      <div className="text-slate-400">Reported Paid Amount:</div>
-                      <div className="text-lg font-bold text-purple-600 dark:text-purple-400">
-                        {formatRupee(s.settlement_reported)}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-slate-400">Payment Date:</div>
-                      <div className="font-semibold text-slate-700 dark:text-slate-300">
-                        {s.settlement_date_reported || 'Today'}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex gap-2">
-                    <Button
-                      onClick={() => adminVerifySettlement(s.devotee.id, s.settlement_reported, s.settlement_date_reported || new Date().toISOString().slice(0, 10), 'Verified & Approved')}
-                      variant="saffron"
-                      size="sm"
-                      className="flex-1 text-xs"
-                    >
-                      <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
-                      <span>Verify & Settle</span>
-                    </Button>
-                  </div>
-                </Card>
-              ))}
+              {/* Status Filter Tabs */}
+              <div className="flex items-center gap-1.5 p-1 bg-slate-100 dark:bg-slate-800/80 rounded-xl text-xs font-semibold">
+                <button
+                  type="button"
+                  onClick={() => setSettlementFilter('ALL')}
+                  className={`px-2.5 py-1.5 rounded-lg transition-colors ${settlementFilter === 'ALL' ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
+                >
+                  All ({allDevoteeSummaries.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSettlementFilter('PENDING')}
+                  className={`px-2.5 py-1.5 rounded-lg transition-colors ${settlementFilter === 'PENDING' ? 'bg-amber-500 text-white shadow-xs' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
+                >
+                  Pending ({allDevoteeSummaries.filter(s => s.settlement_status === 'PENDING_VERIFICATION').length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSettlementFilter('SETTLED')}
+                  className={`px-2.5 py-1.5 rounded-lg transition-colors ${settlementFilter === 'SETTLED' ? 'bg-emerald-600 text-white shadow-xs' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
+                >
+                  Settled ({allDevoteeSummaries.filter(s => s.settlement_status === 'SETTLED').length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSettlementFilter('UNSETTLED')}
+                  className={`px-2.5 py-1.5 rounded-lg transition-colors ${settlementFilter === 'UNSETTLED' ? 'bg-rose-500 text-white shadow-xs' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
+                >
+                  Unsettled ({allDevoteeSummaries.filter(s => s.settlement_status === 'UNSETTLED').length})
+                </button>
+              </div>
             </div>
-          ) : (
-            <Card className="p-8 text-center text-xs text-slate-400 border border-dashed">
-              No pending settlement verification requests at this time.
+
+            <Card className="overflow-hidden border border-slate-200 dark:border-slate-800">
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold border-b border-slate-200 dark:border-slate-700">
+                    <tr>
+                      <th className="py-3 px-3 text-left">Devotee Group</th>
+                      <th className="py-3 px-3 text-left">Phone</th>
+                      <th className="py-3 px-3 text-right">Prasadam Cost</th>
+                      <th className="py-3 px-3 text-right">Expenses</th>
+                      <th className="py-3 px-3 text-right">Carry Fwd</th>
+                      <th className="py-3 px-3 text-right">Payment Recorded</th>
+                      <th className="py-3 px-3 text-center">Settlement Status</th>
+                      <th className="py-3 px-3 text-right">Final Balance</th>
+                      <th className="py-3 px-3 text-center">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+                    {filteredSummaries
+                      .filter(s => {
+                        if (settlementFilter === 'PENDING') return s.settlement_status === 'PENDING_VERIFICATION';
+                        if (settlementFilter === 'SETTLED') return s.settlement_status === 'SETTLED';
+                        if (settlementFilter === 'UNSETTLED') return s.settlement_status === 'UNSETTLED';
+                        return true;
+                      })
+                      .map(s => (
+                        <tr key={s.devotee.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
+                          <td className="py-3 px-3 font-bold text-slate-900 dark:text-white">
+                            {formatDevoteeName(s.devotee)}
+                          </td>
+                          <td className="py-3 px-3 font-mono text-slate-500">
+                            {s.devotee.phone_number}
+                          </td>
+                          <td className="py-3 px-3 text-right font-medium">
+                            {formatRupee(s.prasadam_cost)}
+                          </td>
+                          <td className="py-3 px-3 text-right text-emerald-600 dark:text-emerald-400 font-medium">
+                            {formatRupee(s.approved_expenses)}
+                          </td>
+                          <td className="py-3 px-3 text-right font-mono">
+                            {formatRupee(s.carried_forward)}
+                          </td>
+                          <td className="py-3 px-3 text-right font-bold text-purple-600 dark:text-purple-400">
+                            {formatRupee(s.settlement_reported)}
+                            {s.settlement_date_reported && (
+                              <span className="block text-[10px] text-slate-400 font-normal">
+                                {s.settlement_date_reported}
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-3 px-3 text-center">
+                            {s.settlement_status === 'SETTLED' ? (
+                              <Badge variant="success" size="sm">Settled</Badge>
+                            ) : s.settlement_status === 'PENDING_VERIFICATION' ? (
+                              <Badge variant="warning" size="sm">Pending</Badge>
+                            ) : (
+                              <Badge variant="outline" size="sm">Unsettled</Badge>
+                            )}
+                          </td>
+                          <td className="py-3 px-3 text-right font-extrabold text-sm">
+                            <span
+                              className={
+                                s.final_balance > 0
+                                  ? 'text-rose-600 dark:text-rose-400'
+                                  : s.final_balance < 0
+                                  ? 'text-emerald-600 dark:text-emerald-400'
+                                  : 'text-slate-400'
+                              }
+                            >
+                              {formatRupee(s.final_balance)}
+                            </span>
+                          </td>
+                          <td className="py-3 px-3 text-center">
+                            <div className="flex items-center justify-center gap-1.5">
+                              <Button
+                                onClick={() => handleOpenDirectSettle(s)}
+                                variant="saffron"
+                                size="sm"
+                                className="text-[11px] py-1 px-2.5"
+                                title="Record Settlement"
+                              >
+                                <IndianRupee className="w-3.5 h-3.5 mr-1" />
+                                <span>{s.settlement_status === 'SETTLED' ? 'Edit Settle' : 'Settle'}</span>
+                              </Button>
+
+                              {s.settlement_status !== 'UNSETTLED' && (
+                                <Button
+                                  onClick={() => {
+                                    if (confirm(`Reset settlement to UNSETTLED for ${formatDevoteeName(s.devotee)}?`)) {
+                                      adminResetSettlement(s.devotee.id);
+                                    }
+                                  }}
+                                  variant="ghost"
+                                  size="sm"
+                                  className="text-[11px] py-1 px-1.5 text-slate-400 hover:text-rose-500"
+                                  title="Reset to Unsettled"
+                                >
+                                  <RefreshCw className="w-3 h-3" />
+                                </Button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
             </Card>
-          )}
+          </div>
         </div>
       )}
 

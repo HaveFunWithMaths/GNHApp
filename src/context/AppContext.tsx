@@ -66,8 +66,9 @@ interface AppContextType {
   autoFillCounts: (targetDevoteeId?: string) => Promise<number>;
   submitExpense: (expense: Omit<Expense, 'id' | 'created_at'>) => Promise<Expense>;
   reviewExpense: (id: string, status: 'APPROVED' | 'REJECTED', reason?: string) => Promise<void>;
-  requestSettlement: (amount: number, date: string) => Promise<void>;
+  requestSettlement: (amount: number, date: string, notes?: string) => Promise<void>;
   adminVerifySettlement: (devoteeId: string, amount: number, date: string, notes?: string) => Promise<void>;
+  adminResetSettlement: (devoteeId: string) => Promise<void>;
   carryOverBalances: (nextMonth: string) => Promise<number>;
   saveDevotee: (devotee: Devotee) => Promise<void>;
   refreshData: () => Promise<void>;
@@ -429,9 +430,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   };
 
-  const requestSettlement = async (amount: number, date: string) => {
+  const requestSettlement = async (amount: number, date: string, notes?: string) => {
     if (!activeDevotee) return;
-    await storageService.requestDevoteeSettlement(activeDevotee.id, activeMonth, amount, date);
+    const saved = await storageService.requestDevoteeSettlement(activeDevotee.id, activeMonth, amount, date, notes);
+    setMonthlyLedgers(prev => {
+      const idx = prev.findIndex(l => l.devotee_id === activeDevotee.id && l.cycle_month === activeMonth);
+      if (idx >= 0) {
+        const updated = [...prev];
+        updated[idx] = saved;
+        return updated;
+      }
+      return [...prev, saved];
+    });
     showToast({
       type: 'success',
       title: 'Settlement Submitted',
@@ -440,11 +450,38 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const adminVerifySettlement = async (devoteeId: string, amount: number, date: string, notes?: string) => {
-    await storageService.verifyAndSettleDevotee(devoteeId, activeMonth, amount, date, notes);
+    const saved = await storageService.verifyAndSettleDevotee(devoteeId, activeMonth, amount, date, notes);
+    setMonthlyLedgers(prev => {
+      const idx = prev.findIndex(l => l.devotee_id === devoteeId && l.cycle_month === activeMonth);
+      if (idx >= 0) {
+        const updated = [...prev];
+        updated[idx] = saved;
+        return updated;
+      }
+      return [...prev, saved];
+    });
     showToast({
       type: 'success',
       title: 'Settlement Verified & Settled',
       message: `Marked ₹${amount} as settled.`,
+    });
+  };
+
+  const adminResetSettlement = async (devoteeId: string) => {
+    const saved = await storageService.resetDevoteeSettlement(devoteeId, activeMonth);
+    setMonthlyLedgers(prev => {
+      const idx = prev.findIndex(l => l.devotee_id === devoteeId && l.cycle_month === activeMonth);
+      if (idx >= 0) {
+        const updated = [...prev];
+        updated[idx] = saved;
+        return updated;
+      }
+      return [...prev, saved];
+    });
+    showToast({
+      type: 'warning',
+      title: 'Settlement Reset',
+      message: `Status reverted to Unsettled.`,
     });
   };
 
@@ -536,6 +573,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         reviewExpense,
         requestSettlement,
         adminVerifySettlement,
+        adminResetSettlement,
         carryOverBalances,
         saveDevotee,
         refreshData,

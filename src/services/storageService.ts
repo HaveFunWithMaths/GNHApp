@@ -235,7 +235,7 @@ class StorageService {
           is_auto_filled: c.is_auto_filled,
           updated_at: new Date().toISOString(),
         }));
-        await supabase.from('prasadam_counts').upsert(payload);
+        await supabase.from('prasadam_counts').upsert(payload, { onConflict: 'devotee_id,date' });
       } catch (err) {
         console.warn('Supabase batchSavePrasadamCounts error', err);
       }
@@ -436,6 +436,10 @@ class StorageService {
           .select('*')
           .eq('cycle_month', cycleMonth);
         if (!error && data) {
+          const raw = localStorage.getItem(STORAGE_KEYS.MONTHLY_LEDGERS);
+          const allLedgers: MonthlyLedger[] = raw ? JSON.parse(raw) : [];
+          const otherMonths = allLedgers.filter(l => l.cycle_month !== cycleMonth);
+          localStorage.setItem(STORAGE_KEYS.MONTHLY_LEDGERS, JSON.stringify([...otherMonths, ...data]));
           return data as MonthlyLedger[];
         }
       } catch (err) {
@@ -455,9 +459,22 @@ class StorageService {
     const key = `${ledger.devotee_id}_${ledger.cycle_month}`;
     const index = allLedgers.findIndex(l => `${l.devotee_id}_${l.cycle_month}` === key);
 
+    const isValidUUID = (str?: string | null) =>
+      Boolean(str && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str));
+
+    const existingId = index >= 0 ? allLedgers[index].id : undefined;
+    const resolvedId = (ledger.id && isValidUUID(ledger.id))
+      ? ledger.id
+      : (existingId && isValidUUID(existingId) ? existingId : generateUUID());
+
     const record: MonthlyLedger = {
       ...ledger,
-      id: ledger.id || `ledg-${ledger.devotee_id}-${ledger.cycle_month}`,
+      id: resolvedId,
+      carried_forward_amount: Number(ledger.carried_forward_amount || 0),
+      settlement_amount_reported: Number(ledger.settlement_amount_reported || 0),
+      settlement_date_reported: ledger.settlement_date_reported || null,
+      settlement_status: ledger.settlement_status || 'UNSETTLED',
+      admin_notes: ledger.admin_notes !== undefined ? ledger.admin_notes : null,
     };
 
     let updated: MonthlyLedger[];
@@ -472,7 +489,38 @@ class StorageService {
 
     if (isSupabaseConfigured() && supabase) {
       try {
-        await supabase.from('monthly_ledgers').upsert(record);
+        const payload: Record<string, any> = {
+          devotee_id: record.devotee_id,
+          cycle_month: record.cycle_month,
+          carried_forward_amount: record.carried_forward_amount,
+          settlement_amount_reported: record.settlement_amount_reported,
+          settlement_date_reported: record.settlement_date_reported,
+          settlement_status: record.settlement_status,
+          admin_notes: record.admin_notes,
+        };
+
+        if (record.id && isValidUUID(record.id)) {
+          payload.id = record.id;
+        }
+
+        const { data, error } = await supabase
+          .from('monthly_ledgers')
+          .upsert(payload, { onConflict: 'devotee_id,cycle_month' })
+          .select()
+          .single();
+
+        if (!error && data) {
+          record.id = data.id;
+          const latestRaw = localStorage.getItem(STORAGE_KEYS.MONTHLY_LEDGERS);
+          const latestLedgers: MonthlyLedger[] = latestRaw ? JSON.parse(latestRaw) : [];
+          const idx = latestLedgers.findIndex(l => `${l.devotee_id}_${l.cycle_month}` === key);
+          if (idx >= 0) {
+            latestLedgers[idx] = { ...latestLedgers[idx], id: data.id };
+            localStorage.setItem(STORAGE_KEYS.MONTHLY_LEDGERS, JSON.stringify(latestLedgers));
+          }
+        } else if (error) {
+          console.warn('Supabase saveMonthlyLedger error:', error.message || error);
+        }
       } catch (err) {
         console.warn('Supabase saveMonthlyLedger error', err);
       }
@@ -489,23 +537,24 @@ class StorageService {
     devoteeId: string,
     cycleMonth: string,
     amount: number,
-    date: string
-  ): Promise<void> {
+    date: string,
+    notes?: string
+  ): Promise<MonthlyLedger> {
     const ledgers = await this.getMonthlyLedgers(cycleMonth);
     const existing = ledgers.find(l => l.devotee_id === devoteeId);
 
     const updated: MonthlyLedger = {
-      id: existing?.id || `ledg-${devoteeId}-${cycleMonth}`,
+      id: existing?.id,
       devotee_id: devoteeId,
       cycle_month: cycleMonth,
       carried_forward_amount: existing ? Number(existing.carried_forward_amount || 0) : 0,
-      settlement_amount_reported: amount,
-      settlement_date_reported: date,
+      settlement_amount_reported: Number(amount),
+      settlement_date_reported: date || new Date().toISOString().slice(0, 10),
       settlement_status: 'PENDING_VERIFICATION',
-      admin_notes: existing?.admin_notes || '',
+      admin_notes: notes !== undefined ? notes : (existing?.admin_notes || ''),
     };
 
-    await this.saveMonthlyLedger(updated);
+    return await this.saveMonthlyLedger(updated);
   }
 
   /**
@@ -517,22 +566,46 @@ class StorageService {
     amount: number,
     date: string,
     notes?: string
-  ): Promise<void> {
+  ): Promise<MonthlyLedger> {
     const ledgers = await this.getMonthlyLedgers(cycleMonth);
     const existing = ledgers.find(l => l.devotee_id === devoteeId);
 
     const updated: MonthlyLedger = {
-      id: existing?.id || `ledg-${devoteeId}-${cycleMonth}`,
+      id: existing?.id,
       devotee_id: devoteeId,
       cycle_month: cycleMonth,
       carried_forward_amount: existing ? Number(existing.carried_forward_amount || 0) : 0,
-      settlement_amount_reported: amount,
-      settlement_date_reported: date,
+      settlement_amount_reported: Number(amount),
+      settlement_date_reported: date || new Date().toISOString().slice(0, 10),
       settlement_status: 'SETTLED',
-      admin_notes: notes || existing?.admin_notes || 'Verified by Admin',
+      admin_notes: notes !== undefined ? notes : (existing?.admin_notes || 'Verified by Admin'),
     };
 
-    await this.saveMonthlyLedger(updated);
+    return await this.saveMonthlyLedger(updated);
+  }
+
+  /**
+   * Admin resets settlement to UNSETTLED
+   */
+  async resetDevoteeSettlement(
+    devoteeId: string,
+    cycleMonth: string
+  ): Promise<MonthlyLedger> {
+    const ledgers = await this.getMonthlyLedgers(cycleMonth);
+    const existing = ledgers.find(l => l.devotee_id === devoteeId);
+
+    const updated: MonthlyLedger = {
+      id: existing?.id,
+      devotee_id: devoteeId,
+      cycle_month: cycleMonth,
+      carried_forward_amount: existing ? Number(existing.carried_forward_amount || 0) : 0,
+      settlement_amount_reported: 0,
+      settlement_date_reported: null,
+      settlement_status: 'UNSETTLED',
+      admin_notes: existing?.admin_notes || '',
+    };
+
+    return await this.saveMonthlyLedger(updated);
   }
 
   /**
@@ -549,10 +622,10 @@ class StorageService {
     for (const item of summaries) {
       const existingNext = nextMap.get(item.devoteeId);
       const updated: MonthlyLedger = {
-        id: existingNext?.id || `ledg-${item.devoteeId}-${nextMonth}`,
+        id: existingNext?.id,
         devotee_id: item.devoteeId,
         cycle_month: nextMonth,
-        carried_forward_amount: item.finalBalance, // roll forward final balance
+        carried_forward_amount: Number(item.finalBalance || 0), // roll forward final balance
         settlement_amount_reported: 0,
         settlement_date_reported: null,
         settlement_status: 'UNSETTLED',

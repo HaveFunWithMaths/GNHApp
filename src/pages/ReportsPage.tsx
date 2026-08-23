@@ -53,8 +53,15 @@ export const ReportsPage: React.FC = () => {
   const summary = currentDevoteeSummary;
 
   const handleOpenSettleModal = () => {
-    if (summary && summary.final_balance > 0) {
-      setSettleAmount(summary.final_balance.toString());
+    if (summary) {
+      if (summary.settlement_reported > 0) {
+        setSettleAmount(summary.settlement_reported.toString());
+      } else if (summary.final_balance > 0) {
+        setSettleAmount(summary.final_balance.toString());
+      } else {
+        setSettleAmount('');
+      }
+      setSettleDate(summary.settlement_date_reported || new Date().toISOString().slice(0, 10));
     }
     setIsSettleModalOpen(true);
   };
@@ -62,11 +69,11 @@ export const ReportsPage: React.FC = () => {
   const handleSettleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const amountNum = parseFloat(settleAmount);
-    if (isNaN(amountNum) || amountNum <= 0) return;
+    if (isNaN(amountNum) || amountNum < 0) return;
 
     setIsSubmitting(true);
     try {
-      await requestSettlement(amountNum, settleDate);
+      await requestSettlement(amountNum, settleDate, paymentNote);
       setIsSettleModalOpen(false);
       // Trigger festive celebration confetti
       try {
@@ -352,17 +359,49 @@ export const ReportsPage: React.FC = () => {
               </span>
             </div>
 
-            {summary.final_balance > 0 && (
-              <Button
-                onClick={handleOpenSettleModal}
-                variant="saffron"
-                size="md"
-                className="w-full sm:w-auto"
-              >
-                <IndianRupee className="w-4 h-4 mr-1" />
-                <span>Settle Balance ({formatRupee(summary.final_balance)})</span>
-              </Button>
-            )}
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              {summary.settlement_status === 'PENDING_VERIFICATION' ? (
+                <Button
+                  onClick={handleOpenSettleModal}
+                  variant="outline"
+                  size="md"
+                  className="w-full sm:w-auto text-amber-600 dark:text-amber-400 border-amber-500/40 hover:bg-amber-50 dark:hover:bg-amber-950/30"
+                >
+                  <Clock className="w-4 h-4 mr-1 text-amber-500" />
+                  <span>Update Reported Payment ({formatRupee(summary.settlement_reported)})</span>
+                </Button>
+              ) : summary.settlement_status === 'SETTLED' ? (
+                <Button
+                  onClick={handleOpenSettleModal}
+                  variant="outline"
+                  size="md"
+                  className="w-full sm:w-auto text-emerald-600 dark:text-emerald-400 border-emerald-500/40 hover:bg-emerald-50 dark:hover:bg-emerald-950/30"
+                >
+                  <CheckCircle2 className="w-4 h-4 mr-1 text-emerald-500" />
+                  <span>Settled ({formatRupee(summary.settlement_reported)}) • Update</span>
+                </Button>
+              ) : summary.final_balance > 0 ? (
+                <Button
+                  onClick={handleOpenSettleModal}
+                  variant="saffron"
+                  size="md"
+                  className="w-full sm:w-auto"
+                >
+                  <IndianRupee className="w-4 h-4 mr-1" />
+                  <span>Settle Balance ({formatRupee(summary.final_balance)})</span>
+                </Button>
+              ) : (
+                <Button
+                  onClick={handleOpenSettleModal}
+                  variant="outline"
+                  size="md"
+                  className="w-full sm:w-auto"
+                >
+                  <IndianRupee className="w-4 h-4 mr-1" />
+                  <span>Report Payment</span>
+                </Button>
+              )}
+            </div>
           </div>
         </Card>
       )}
