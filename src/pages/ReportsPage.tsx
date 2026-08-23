@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import {
   TrendingUp,
-  AlertTriangle,
   ArrowRight,
   CheckCircle2,
   Clock,
@@ -24,7 +23,6 @@ import { Modal } from '../components/common/Modal';
 import {
   formatRupee,
   formatMonthName,
-  getCutoffFormattedDate,
   formatDevoteeName,
   PRASADAM_RATES,
 } from '../utils/calculations';
@@ -141,33 +139,6 @@ export const ReportsPage: React.FC = () => {
 
   return (
     <div className="max-w-5xl mx-auto space-y-6 pb-20">
-      {/* 1. Missing Count Alert Banner */}
-      {summary && summary.unfilled_days > 0 && (
-        <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-amber-500/5 border border-amber-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-fade-in shadow-sm">
-          <div className="flex items-start sm:items-center gap-3">
-            <div className="p-2 rounded-xl bg-amber-500/20 text-amber-700 dark:text-amber-400 shrink-0">
-              <AlertTriangle className="w-5 h-5" />
-            </div>
-            <div>
-              <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100">
-                You have {summary.unfilled_days} unfilled days in {formatMonthName(activeMonth)}
-              </h4>
-              <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5">
-                Ensure meal counts are recorded before booking closes on <strong>{getCutoffFormattedDate(activeMonth)}</strong>. Unfilled days auto-fill with your highest entered counts.
-              </p>
-            </div>
-          </div>
-          <Button
-            onClick={() => setActiveTab('prasadam')}
-            variant="saffron"
-            size="sm"
-            className="shrink-0 self-start sm:self-auto text-xs"
-          >
-            <span>Update Prasadam & Expenses</span>
-            <ArrowRight className="w-3.5 h-3.5 ml-1" />
-          </Button>
-        </div>
-      )}
 
       {/* 2. Main Financial Statement Hero Card */}
       {summary && (

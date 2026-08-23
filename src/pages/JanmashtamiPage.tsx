@@ -141,18 +141,25 @@ export const JanmashtamiPage: React.FC = () => {
       return;
     }
 
+    if (!receiptFile) {
+      showToast({
+        type: 'warning',
+        title: 'Attachment Mandatory',
+        message: 'Bill / Receipt attachment is mandatory for Janmashtami Seva expenses.',
+      });
+      return;
+    }
+
     setIsUploading(true);
     try {
       let attachmentUrl: string | undefined = undefined;
 
-      if (receiptFile) {
-        try {
-          const compressed = await compressImage(receiptFile);
-          attachmentUrl = await storageService.uploadReceipt(compressed);
-        } catch (uploadErr) {
-          console.warn('Receipt compression/upload fallback:', uploadErr);
-          attachmentUrl = await storageService.uploadReceipt(receiptFile);
-        }
+      try {
+        const compressed = await compressImage(receiptFile);
+        attachmentUrl = await storageService.uploadReceipt(compressed);
+      } catch (uploadErr) {
+        console.warn('Receipt compression/upload fallback:', uploadErr);
+        attachmentUrl = await storageService.uploadReceipt(receiptFile);
       }
 
       await submitExpense({
@@ -344,18 +351,20 @@ export const JanmashtamiPage: React.FC = () => {
               />
             </div>
 
-            {/* Bill Upload with 10 MB Limit */}
+            {/* Bill Upload with 10 MB Limit - Mandatory */}
             <div>
-              <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1.5">
-                Bill / Receipt Photo (Max 10 MB, Auto-compressed)
+              <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1.5 flex items-center gap-1">
+                <span>Bill / Receipt Photo</span>
+                <span className="text-red-500 font-bold">*</span>
+                <span className="text-[11px] font-normal text-amber-600 dark:text-amber-400 ml-1">(Mandatory)</span>
               </label>
               <div className="flex items-center gap-3">
-                <label className="flex-1 flex flex-col items-center justify-center p-3 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl cursor-pointer hover:border-amber-500 dark:hover:border-amber-500 transition-colors bg-slate-50 dark:bg-slate-800/50">
-                  <Upload className="w-5 h-5 text-slate-400 mb-1" />
-                  <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">
-                    {receiptFile ? receiptFile.name : 'Choose receipt photo'}
+                <label className={`flex-1 flex flex-col items-center justify-center p-3 border-2 border-dashed rounded-xl cursor-pointer transition-colors bg-slate-50 dark:bg-slate-800/50 ${!receiptFile ? 'border-amber-400 dark:border-amber-600/70 hover:border-amber-500' : 'border-emerald-500/50 dark:border-emerald-600/50'}`}>
+                  <Upload className={`w-5 h-5 mb-1 ${receiptFile ? 'text-emerald-500' : 'text-amber-500'}`} />
+                  <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">
+                    {receiptFile ? receiptFile.name : 'Upload receipt photo *'}
                   </span>
-                  <span className="text-[10px] text-slate-400">JPG, PNG, WebP up to 10 MB</span>
+                  <span className="text-[10px] text-slate-400">JPG, PNG, WebP up to 10 MB (Required)</span>
                   <input
                     type="file"
                     accept="image/*"
