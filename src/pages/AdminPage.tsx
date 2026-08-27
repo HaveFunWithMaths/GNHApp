@@ -358,7 +358,7 @@ export const AdminPage: React.FC = () => {
 
   // Generate WhatsApp Message URL with exact closing date and custom Vaishnava template
   const generateWhatsAppLink = (summary: DevoteeMonthlySummary) => {
-    const name = formatDevoteeName(summary.devotee).split(' ')[0];
+    const name = formatDevoteeName(summary.devotee);
     const message = generateCustomReminderMessage(activeMonth, summary.devotee.phone_number, name);
     return `https://wa.me/91${summary.devotee.phone_number}?text=${encodeURIComponent(message)}`;
   };
@@ -1085,7 +1085,7 @@ export const AdminPage: React.FC = () => {
               {filteredSummaries.map(s => {
                 const hasMissing = s.unfilled_days > 0;
                 const waLink = generateWhatsAppLink(s);
-                const devoteeName = formatDevoteeName(s.devotee).split(' ')[0];
+                const devoteeName = formatDevoteeName(s.devotee);
 
                 return (
                   <Card
