@@ -95,7 +95,7 @@ export function generateCustomReminderMessage(
 ): string {
   const exactCutoff = getCutoffFormattedDate(cycleMonth);
   const cashHandoverDay = getCashSettlementDayFormatted(cycleMonth);
-  const greeting = devoteeName ? `Hare Krishna ${devoteeName}ji, PAMHO` : 'Hare Krishna, PAMHO';
+  const greeting = devoteeName ? `Hare Krishna ${devoteeName}, PAMHO` : 'Hare Krishna, PAMHO';
   const baseUrl = 'https://gnh-app.vercel.app';
 
   return `${greeting}

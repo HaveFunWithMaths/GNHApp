@@ -1156,7 +1156,7 @@ export const AdminPage: React.FC = () => {
                           showToast({
                             type: 'success',
                             title: 'Copied Message',
-                            message: `Copied personalized message for ${devoteeName}ji`,
+                            message: `Copied personalized message for ${devoteeName}`,
                           });
                         }}
                         variant="outline"
