@@ -166,7 +166,7 @@ class StorageService {
 
         const { data, error } = await supabase
           .from('devotees')
-          .upsert(payload, { onConflict: 'phone_number' })
+          .upsert(payload, { onConflict: 'id' })
           .select()
           .single();
 
@@ -174,16 +174,18 @@ class StorageService {
           record.id = data.id;
           const latestRaw = localStorage.getItem(STORAGE_KEYS.DEVOTEES);
           const latestDevotees: Devotee[] = latestRaw ? JSON.parse(latestRaw) : [];
-          const idx = latestDevotees.findIndex(d => d.phone_number === record.phone_number);
+          const idx = latestDevotees.findIndex(d => (record.id && d.id === record.id) || d.phone_number === record.phone_number);
           if (idx >= 0) {
-            latestDevotees[idx] = { ...latestDevotees[idx], id: data.id };
+            latestDevotees[idx] = { ...latestDevotees[idx], ...record, id: data.id };
             localStorage.setItem(STORAGE_KEYS.DEVOTEES, JSON.stringify(latestDevotees));
           }
         } else if (error) {
           console.warn('Supabase saveDevotee error:', error.message || error);
+          throw new Error(error.message || 'Failed to save devotee in database.');
         }
-      } catch (err) {
+      } catch (err: any) {
         console.warn('Supabase saveDevotee sync exception', err);
+        throw err;
       }
     }
 

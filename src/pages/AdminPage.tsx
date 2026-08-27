@@ -316,29 +316,46 @@ export const AdminPage: React.FC = () => {
       .filter(r => r.name.trim().length > 0)
       .map(r => {
         const parsedCost = r.community_cost ? parseFloat(r.community_cost) : undefined;
+        let memberPhone = cleanPhoneNumber(r.phone_number) || undefined;
+        if (editingDevotee && memberPhone === cleanPhoneNumber(editingDevotee.phone_number)) {
+          memberPhone = cleanPhone;
+        }
         return {
           id: r.id,
           name: r.name.trim(),
-          phone_number: cleanPhoneNumber(r.phone_number) || undefined,
+          phone_number: memberPhone,
           is_friend: Boolean(r.is_friend),
           community_cost: typeof parsedCost === 'number' && !isNaN(parsedCost) ? Math.max(0, parsedCost) : undefined,
           monthly_counts: r.monthly_counts || {},
         };
       });
 
-    await saveDevotee({
-      id: editingDevotee?.id || undefined as any,
-      group_name: devoteeGroupName.trim(),
-      phone_number: devoteePhone.trim(),
-      community_cost: finalGroupCost,
-      family_members:
-        validMembers.length > 0
-          ? validMembers
-          : [{ name: devoteeGroupName.trim(), phone_number: devoteePhone.trim(), is_friend: false }],
-      is_admin: editingDevotee?.is_admin || false,
-    });
+    try {
+      await saveDevotee({
+        id: editingDevotee?.id || undefined as any,
+        group_name: devoteeGroupName.trim(),
+        phone_number: cleanPhone,
+        community_cost: finalGroupCost,
+        family_members:
+          validMembers.length > 0
+            ? validMembers
+            : [{ name: devoteeGroupName.trim(), phone_number: cleanPhone, is_friend: false }],
+        is_admin: editingDevotee?.is_admin || false,
+      });
 
-    setIsDevoteeModalOpen(false);
+      showToast({
+        type: 'success',
+        title: 'Devotee Saved',
+        message: `Devotee ${devoteeGroupName.trim()} saved successfully.`,
+      });
+      setIsDevoteeModalOpen(false);
+    } catch (err: any) {
+      showToast({
+        type: 'error',
+        title: 'Error Saving Devotee',
+        message: err.message || 'Failed to save devotee in database.',
+      });
+    }
   };
 
   // Handle Admin PIN update
