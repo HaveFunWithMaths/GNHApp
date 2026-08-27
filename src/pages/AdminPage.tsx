@@ -14,6 +14,7 @@ import {
   Plus,
   Search,
   MessageSquare,
+  Copy,
   Key,
   Database,
   Eye,
@@ -32,6 +33,7 @@ import {
   calculateMealsCost,
   getAllDatesInMonth,
   getCutoffFormattedDate,
+  generateCustomReminderMessage,
   formatDevoteeName,
 } from '../utils/calculations';
 import {
@@ -320,15 +322,11 @@ export const AdminPage: React.FC = () => {
     setNewPinInput('');
   };
 
-  // Generate WhatsApp Message URL with exact closing date
+  // Generate WhatsApp Message URL with exact closing date and custom Vaishnava template
   const generateWhatsAppLink = (summary: DevoteeMonthlySummary) => {
     const name = formatDevoteeName(summary.devotee).split(' ')[0];
-    const month = formatMonthName(activeMonth);
-    const exactCutoff = getCutoffFormattedDate(activeMonth);
-    const text = encodeURIComponent(
-      `Hare Krishna ${name}ji, you have ${summary.unfilled_days} unfilled days in GNH App for ${month}. Please update before entry closes (${exactCutoff}): https://gnh.app/prasadam?phone=${summary.devotee.phone_number}`
-    );
-    return `https://wa.me/91${summary.devotee.phone_number}?text=${text}`;
+    const message = generateCustomReminderMessage(activeMonth, summary.devotee.phone_number, name);
+    return `https://wa.me/91${summary.devotee.phone_number}?text=${encodeURIComponent(message)}`;
   };
 
   const datesForMonth = getAllDatesInMonth(activeMonth);
@@ -996,78 +994,133 @@ export const AdminPage: React.FC = () => {
 
       {/* TAB 4: WHATSAPP REMINDERS */}
       {activeAdminTab === 'whatsapp' && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
+        <div className="space-y-5">
+          {/* Header & Broadcast Message Template */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                WhatsApp Missing Count Reminders
+              <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <MessageSquare className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+                WhatsApp Reminders & Broadcast
               </h3>
-              <p className="text-xs text-slate-400">
-                1-Click pre-filled WhatsApp links for devotees with unfilled meal counts before entry closes ({getCutoffFormattedDate(activeMonth)}).
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Deadline: <span className="font-semibold text-amber-600 dark:text-amber-400">{getCutoffFormattedDate(activeMonth)}</span> (N-2 days of month).
               </p>
             </div>
+
+            <Button
+              onClick={() => {
+                const broadcastText = generateCustomReminderMessage(activeMonth);
+                navigator.clipboard.writeText(broadcastText);
+                showToast({
+                  type: 'success',
+                  title: 'Template Copied!',
+                  message: 'Broadcast message copied to clipboard.',
+                });
+              }}
+              variant="outline"
+              size="sm"
+              className="text-xs font-bold self-start sm:self-auto border-emerald-500/40 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300"
+            >
+              <Copy className="w-3.5 h-3.5 mr-1 text-emerald-600" />
+              <span>Copy Broadcast Template</span>
+            </Button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {filteredSummaries.map(s => {
-              const hasMissing = s.unfilled_days > 0;
-              const waLink = generateWhatsAppLink(s);
+          {/* Template Preview Card */}
+          <Card className="p-4 bg-slate-50/80 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-2xl">
+            <div className="flex items-center justify-between mb-2 pb-2 border-b border-slate-200 dark:border-slate-800">
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                Message Preview
+              </span>
+              <span className="text-[11px] font-mono text-slate-400">
+                Deadline: {getCutoffFormattedDate(activeMonth)}
+              </span>
+            </div>
+            <pre className="text-xs font-sans text-slate-700 dark:text-slate-300 whitespace-pre-wrap leading-relaxed">
+              {generateCustomReminderMessage(activeMonth, '<phoneNumber>')}
+            </pre>
+          </Card>
 
-              return (
-                <Card
-                  key={s.devotee.id}
-                  className={`p-4 border ${hasMissing ? 'border-amber-300 dark:border-amber-800/80 bg-amber-50/10' : 'border-slate-200 dark:border-slate-800'}`}
-                >
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="font-bold text-sm text-slate-900 dark:text-white">
-                        {formatDevoteeName(s.devotee)}
+          {/* Devotee Reminder Cards */}
+          <div>
+            <div className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-3">
+              Individual Devotee Reminders ({filteredSummaries.length})
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {filteredSummaries.map(s => {
+                const hasMissing = s.unfilled_days > 0;
+                const waLink = generateWhatsAppLink(s);
+                const devoteeName = formatDevoteeName(s.devotee).split(' ')[0];
+
+                return (
+                  <Card
+                    key={s.devotee.id}
+                    className={`p-4 border transition-all ${
+                      hasMissing
+                        ? 'border-amber-300 dark:border-amber-800/80 bg-amber-50/10'
+                        : 'border-slate-200 dark:border-slate-800'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="font-bold text-sm text-slate-900 dark:text-white">
+                          {formatDevoteeName(s.devotee)}
+                        </div>
+                        <div className="text-xs text-slate-500 font-mono">
+                          📱 +91 {s.devotee.phone_number}
+                        </div>
                       </div>
-                      <div className="text-xs text-slate-500 font-mono">
-                        📱 +91 {s.devotee.phone_number}
-                      </div>
+
+                      {hasMissing ? (
+                        <Badge variant="warning" size="sm">
+                          {s.unfilled_days} Unfilled Days
+                        </Badge>
+                      ) : (
+                        <Badge variant="success" size="sm">
+                          All Days Filled
+                        </Badge>
+                      )}
                     </div>
 
-                    {hasMissing ? (
-                      <Badge variant="warning" size="sm">
-                        {s.unfilled_days} Unfilled Days
-                      </Badge>
-                    ) : (
-                      <Badge variant="success" size="sm">
-                        All Days Filled
-                      </Badge>
-                    )}
-                  </div>
+                    <div className="mt-3 flex items-center justify-between gap-2">
+                      <a
+                        href={waLink}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex-1 inline-flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs transition-colors"
+                      >
+                        <MessageSquare className="w-3.5 h-3.5" />
+                        <span>Send WhatsApp Reminder</span>
+                      </a>
 
-                  <div className="mt-3 flex items-center justify-between gap-2">
-                    <a
-                      href={waLink}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="flex-1 inline-flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs transition-colors"
-                    >
-                      <MessageSquare className="w-3.5 h-3.5" />
-                      <span>Send WhatsApp Reminder</span>
-                    </a>
-
-                    <Button
-                      onClick={() => {
-                        const name = formatDevoteeName(s.devotee).split(' ')[0];
-                        const text = `Hare Krishna ${name}ji, you have ${s.unfilled_days} unfilled days in GNH App for ${formatMonthName(activeMonth)}. Please update before entry closes (${getCutoffFormattedDate(activeMonth)}): https://gnh.app/prasadam?phone=${s.devotee.phone_number}`;
-                        navigator.clipboard.writeText(text);
-                        showToast({ type: 'success', title: 'Copied WhatsApp Message' });
-                      }}
-                      variant="outline"
-                      size="sm"
-                      className="text-xs"
-                      title="Copy text"
-                    >
-                      Copy
-                    </Button>
-                  </div>
-                </Card>
-              );
-            })}
+                      <Button
+                        onClick={() => {
+                          const text = generateCustomReminderMessage(
+                            activeMonth,
+                            s.devotee.phone_number,
+                            devoteeName
+                          );
+                          navigator.clipboard.writeText(text);
+                          showToast({
+                            type: 'success',
+                            title: 'Copied Message',
+                            message: `Copied personalized message for ${devoteeName}ji`,
+                          });
+                        }}
+                        variant="outline"
+                        size="sm"
+                        className="text-xs"
+                        title="Copy personalized text"
+                      >
+                        <Copy className="w-3.5 h-3.5 mr-1" />
+                        <span>Copy</span>
+                      </Button>
+                    </div>
+                  </Card>
+                );
+              })}
+            </div>
           </div>
         </div>
       )}

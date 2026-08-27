@@ -33,22 +33,22 @@ export function getAllDatesInMonth(cycleMonth: string): string[] {
 
 /**
  * Calculates the Cutoff Date/Time:
- * 8:00 PM (20:00) on the last-but-one day of the given month.
- * e.g., for August (31 days) -> Aug 30 at 20:00:00.
+ * 8:00 PM (20:00) on the N-2 day of the given month (2 days before month end).
+ * e.g., for August (31 days, N=31) -> Aug 29 at 20:00:00.
  */
 export function getCutoffDateTime(cycleMonth: string): Date {
   const [yearStr, monthStr] = cycleMonth.split('-');
   const year = parseInt(yearStr, 10);
   const month = parseInt(monthStr, 10);
   const totalDays = new Date(year, month, 0).getDate();
-  const lastButOneDay = totalDays - 1;
+  const cutoffDay = totalDays - 2;
 
   // Month is 0-indexed in JS Date constructor
-  return new Date(year, month - 1, lastButOneDay, 20, 0, 0, 0);
+  return new Date(year, month - 1, cutoffDay, 20, 0, 0, 0);
 }
 
 /**
- * Returns exact formatted Cutoff Date string, e.g. "30 Aug 2026, 8:00 PM"
+ * Returns exact formatted Cutoff Date string, e.g. "29 Aug 2026, 8:00 PM"
  */
 export function getCutoffFormattedDate(cycleMonth: string): string {
   const cutoff = getCutoffDateTime(cycleMonth);
@@ -56,6 +56,50 @@ export function getCutoffFormattedDate(cycleMonth: string): string {
   const monthName = cutoff.toLocaleDateString('en-US', { month: 'short' });
   const year = cutoff.getFullYear();
   return `${day} ${monthName} ${year}, 8:00 PM`;
+}
+
+/**
+ * Returns exact formatted Cutoff Day string, e.g. "29 Aug 2026"
+ */
+export function getCutoffDayFormatted(cycleMonth: string): string {
+  const cutoff = getCutoffDateTime(cycleMonth);
+  const day = cutoff.getDate();
+  const monthName = cutoff.toLocaleDateString('en-US', { month: 'short' });
+  const year = cutoff.getFullYear();
+  return `${day} ${monthName} ${year}`;
+}
+
+/**
+ * Generates the custom Vaishnava reminder message for monthly prasadam & expense submissions
+ */
+export function generateCustomReminderMessage(
+  cycleMonth: string,
+  phoneNumber: string = '<phoneNumber>',
+  devoteeName?: string
+): string {
+  const exactCutoff = getCutoffFormattedDate(cycleMonth);
+  const cutoffDay = getCutoffDayFormatted(cycleMonth);
+  const greeting = devoteeName ? `Hare Krishna ${devoteeName}ji, PAMHO` : 'Hare Krishna, PAMHO';
+  const baseUrl = 'https://gnh-app.vercel.app';
+
+  return `${greeting}
+Please update your Prasadam counts and expenses for this month:
+
+Step 1: Enter Details
+${baseUrl}/?tab=prasadam&month=${cycleMonth}&phone=${phoneNumber}
+Deadline: ${exactCutoff} (Note: If not submitted in time, the app will automatically record a full count.)
+
+Step 2: Check Contribution
+${baseUrl}/?tab=reports&month=${cycleMonth}&phone=${phoneNumber}
+View your final contribution amount here once your details are entered.
+
+Step 3: Cash Settlement
+Please hand over the cash by ${cutoffDay}
+
+Kindly ensure these timelines are strictly adhered to so accounts can be finalized smoothly.
+
+YS,
+Accounts Incharge`;
 }
 
 /**

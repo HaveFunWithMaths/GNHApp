@@ -41,7 +41,7 @@ The app supports both online cloud synchronization with **Supabase PostgreSQL** 
 - **Intuitive Meal Counters**: Quick-increment / decrement buttons and direct numeric inputs for Breakfast, Lunch, and Dinner.
 - **Dynamic Cost Feedback**: Real-time calculation of total meal charges based on active pricing.
 - **Monthly Matrix View**: Devotees and admins can inspect daily counts across all calendar days of the month.
-- **Strict Cutoff Enforcement**: Automatic freeze at **8:00 PM on the second-to-last day of each month**.
+- **Strict Cutoff Enforcement**: Automatic freeze at **8:00 PM on the N-2 day of each month** (2 days before month end).
 - **Smart Auto-Fill Algorithm**: Incomplete/empty booking days automatically backfill using the devotee's maximum entered meal count to ensure fair community catering provisions.
 
 ### 🧾 2. Expense & Receipt Logging
@@ -111,9 +111,9 @@ The app supports both online cloud synchronization with **Supabase PostgreSQL** 
 - **Zero Balance ($= ₹0$)**: Account fully settled.
 
 ### 3. Monthly Cutoff Deadline
-- **Cutoff Time**: Exactly **8:00 PM (20:00:00)** on the **second-to-last day** of the active month.
-  - *Example for August (31 days)*: August 30 at 8:00 PM.
-  - *Example for February (28 days)*: February 27 at 8:00 PM.
+- **Cutoff Time**: Exactly **8:00 PM (20:00:00)** on the **N-2 day** of the active month (2 days before month end).
+  - *Example for August (31 days)*: August 29 at 8:00 PM.
+  - *Example for February (28 days)*: February 26 at 8:00 PM.
 - **Lockdown Behavior**: Once cutoff passes, devotee inputs freeze. Only the Admin PIN can unlock or edit counts.
 - **Countdown Timer**: Real-time countdown timer in the navbar displays remaining time before cutoff.
 
