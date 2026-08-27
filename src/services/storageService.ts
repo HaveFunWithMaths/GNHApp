@@ -135,6 +135,7 @@ class StorageService {
       phone_number: cleanPhone,
       group_name: devotee.group_name.trim(),
       family_members: normalizeFamilyMembers(devotee),
+      community_cost: typeof devotee.community_cost === 'number' ? devotee.community_cost : undefined,
       is_admin: Boolean(devotee.is_admin),
       created_at: index >= 0 ? (devotees[index].created_at || new Date().toISOString()) : new Date().toISOString(),
     };
@@ -368,6 +369,44 @@ class StorageService {
     });
 
     await this.batchSavePrasadamCounts(records);
+  }
+
+  /**
+   * Save monthly meal counts for a specific Friend participant under a devotee group
+   */
+  async saveFriendMonthlyCounts(
+    devoteeId: string,
+    friendName: string,
+    cycleMonth: string,
+    totalB: number,
+    totalL: number,
+    totalD: number
+  ): Promise<Devotee | null> {
+    const devotees = await this.getDevotees();
+    const index = devotees.findIndex(d => d.id === devoteeId);
+    if (index < 0) return null;
+
+    const devotee = devotees[index];
+    const members = normalizeFamilyMembers(devotee);
+    const friendIndex = members.findIndex(
+      m => m.name.toLowerCase().trim() === friendName.toLowerCase().trim() && m.is_friend
+    );
+    if (friendIndex < 0) return null;
+
+    const friend = members[friendIndex];
+    const existingMonthly = friend.monthly_counts || {};
+    friend.monthly_counts = {
+      ...existingMonthly,
+      [cycleMonth]: {
+        breakfast: Math.max(0, Math.round(totalB)),
+        lunch: Math.max(0, Math.round(totalL)),
+        dinner: Math.max(0, Math.round(totalD)),
+      },
+    };
+
+    members[friendIndex] = friend;
+    const updatedDevotee: Devotee = { ...devotee, family_members: members };
+    return this.saveDevotee(updatedDevotee);
   }
 
   /**

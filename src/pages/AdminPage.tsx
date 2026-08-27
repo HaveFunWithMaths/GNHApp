@@ -39,6 +39,8 @@ import {
 import {
   normalizeFamilyMembers,
   getFamilyMemberNames,
+  getPureFamilyMembers,
+  getFriendMembers,
   getAllDevoteePhones,
   formatDevoteeFamilyDisplay,
   cleanPhoneNumber,
@@ -109,8 +111,16 @@ export const AdminPage: React.FC = () => {
   const [editingDevotee, setEditingDevotee] = useState<Devotee | null>(null);
   const [devoteeGroupName, setDevoteeGroupName] = useState('');
   const [devoteePhone, setDevoteePhone] = useState('');
-  const [familyRows, setFamilyRows] = useState<{ name: string; phone_number: string }[]>([
-    { name: '', phone_number: '' },
+  const [devoteeCommunityCost, setDevoteeCommunityCost] = useState<string>('500');
+  const [familyRows, setFamilyRows] = useState<{
+    id?: string;
+    name: string;
+    phone_number: string;
+    is_friend: boolean;
+    community_cost: string;
+    monthly_counts?: Record<string, { breakfast: number; lunch: number; dinner: number }>;
+  }[]>([
+    { name: '', phone_number: '', is_friend: false, community_cost: '' },
   ]);
 
   // PIN change state
@@ -259,17 +269,30 @@ export const AdminPage: React.FC = () => {
       setEditingDevotee(devotee);
       setDevoteeGroupName(devotee.group_name);
       setDevoteePhone(devotee.phone_number);
+      setDevoteeCommunityCost(
+        typeof devotee.community_cost === 'number'
+          ? devotee.community_cost.toString()
+          : communityCostPerMember.toString()
+      );
       const normalized = normalizeFamilyMembers(devotee);
       setFamilyRows(
         normalized.length > 0
-          ? normalized.map(m => ({ name: m.name, phone_number: m.phone_number || '' }))
-          : [{ name: devotee.group_name, phone_number: devotee.phone_number }]
+          ? normalized.map(m => ({
+              id: m.id,
+              name: m.name,
+              phone_number: m.phone_number || '',
+              is_friend: Boolean(m.is_friend),
+              community_cost: typeof m.community_cost === 'number' ? m.community_cost.toString() : '',
+              monthly_counts: m.monthly_counts || {},
+            }))
+          : [{ name: devotee.group_name, phone_number: devotee.phone_number, is_friend: false, community_cost: '' }]
       );
     } else {
       setEditingDevotee(null);
       setDevoteeGroupName('');
       setDevoteePhone('');
-      setFamilyRows([{ name: '', phone_number: '' }]);
+      setDevoteeCommunityCost(communityCostPerMember.toString());
+      setFamilyRows([{ name: '', phone_number: '', is_friend: false, community_cost: '' }]);
     }
     setIsDevoteeModalOpen(true);
   };
@@ -286,21 +309,32 @@ export const AdminPage: React.FC = () => {
       return;
     }
 
+    const parsedGroupCost = parseFloat(devoteeCommunityCost);
+    const finalGroupCost = !isNaN(parsedGroupCost) && parsedGroupCost >= 0 ? parsedGroupCost : undefined;
+
     const validMembers: FamilyMember[] = familyRows
       .filter(r => r.name.trim().length > 0)
-      .map(r => ({
-        name: r.name.trim(),
-        phone_number: cleanPhoneNumber(r.phone_number) || undefined,
-      }));
+      .map(r => {
+        const parsedCost = r.community_cost ? parseFloat(r.community_cost) : undefined;
+        return {
+          id: r.id,
+          name: r.name.trim(),
+          phone_number: cleanPhoneNumber(r.phone_number) || undefined,
+          is_friend: Boolean(r.is_friend),
+          community_cost: typeof parsedCost === 'number' && !isNaN(parsedCost) ? Math.max(0, parsedCost) : undefined,
+          monthly_counts: r.monthly_counts || {},
+        };
+      });
 
     await saveDevotee({
       id: editingDevotee?.id || undefined as any,
       group_name: devoteeGroupName.trim(),
       phone_number: devoteePhone.trim(),
+      community_cost: finalGroupCost,
       family_members:
         validMembers.length > 0
           ? validMembers
-          : [{ name: devoteeGroupName.trim(), phone_number: devoteePhone.trim() }],
+          : [{ name: devoteeGroupName.trim(), phone_number: devoteePhone.trim(), is_friend: false }],
       is_admin: editingDevotee?.is_admin || false,
     });
 
@@ -1155,7 +1189,10 @@ export const AdminPage: React.FC = () => {
               })
               .map(d => {
                 const displayName = formatDevoteeName(d);
+                const pureFamily = getPureFamilyMembers(d);
+                const friends = getFriendMembers(d);
                 const hasMultiple = d.family_members && d.family_members.length > 1;
+                const activeGroupCost = typeof d.community_cost === 'number' ? d.community_cost : communityCostPerMember;
 
                 return (
                   <Card key={d.id} className="p-4 border border-slate-200 dark:border-slate-800 flex flex-col justify-between">
@@ -1167,11 +1204,16 @@ export const AdminPage: React.FC = () => {
                         {d.is_admin && <Badge variant="saffron" size="sm">Admin</Badge>}
                       </div>
                       <div className="text-xs font-mono text-slate-500 mt-1">
-                        📱 {d.phone_number}
+                        📱 +91 {d.phone_number} • <span className="font-bold text-amber-600 dark:text-amber-400">₹{activeGroupCost}/member</span>
                       </div>
                       {hasMultiple && (
-                        <div className="text-xs text-slate-600 dark:text-slate-400 mt-2">
-                          <strong>Family:</strong> {formatDevoteeFamilyDisplay(d, true)}
+                        <div className="text-xs text-slate-600 dark:text-slate-400 mt-2 space-y-1">
+                          <div><strong>Family ({pureFamily.length}):</strong> {pureFamily.map(m => m.name).join(', ') || displayName}</div>
+                          {friends.length > 0 && (
+                            <div className="text-emerald-700 dark:text-emerald-400 font-medium">
+                              <strong>Friends ({friends.length}):</strong> {friends.map(f => f.name).join(', ')}
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
@@ -1554,71 +1596,154 @@ export const AdminPage: React.FC = () => {
             />
           </div>
 
-          {/* Family Members Section */}
+          {/* Group Community Cost */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+              Group Default Community Cost (₹ / participant)
+            </label>
+            <input
+              type="number"
+              min="0"
+              placeholder={`Default: ₹${communityCostPerMember}`}
+              value={devoteeCommunityCost}
+              onChange={e => setDevoteeCommunityCost(e.target.value)}
+              className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border rounded-xl text-sm font-mono outline-none"
+            />
+            <span className="text-[11px] text-slate-400 block mt-0.5">
+              Default community fee levied per participant. Leave empty to use system default (₹{communityCostPerMember}).
+            </span>
+          </div>
+
+          {/* Family & Friends Section */}
           <div className="pt-2 border-t border-slate-200 dark:border-slate-800">
-            <div className="flex items-center justify-between mb-1.5">
+            <div className="flex items-center justify-between mb-1.5 flex-wrap gap-2">
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-200">
-                Family Members ({familyRows.length})
+                Family & Friends Participants ({familyRows.length})
               </label>
-              <button
-                type="button"
-                onClick={() => setFamilyRows(prev => [...prev, { name: '', phone_number: '' }])}
-                className="text-xs text-amber-600 dark:text-amber-400 hover:underline font-semibold flex items-center gap-1"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>Add Member</span>
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setFamilyRows(prev => [...prev, { name: '', phone_number: '', is_friend: false, community_cost: '' }])}
+                  className="text-xs text-amber-600 dark:text-amber-400 hover:underline font-semibold flex items-center gap-1"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Add Family Member</span>
+                </button>
+                <span className="text-slate-300 dark:text-slate-700">•</span>
+                <button
+                  type="button"
+                  onClick={() => setFamilyRows(prev => [...prev, { name: '', phone_number: '', is_friend: true, community_cost: '' }])}
+                  className="text-xs text-emerald-600 dark:text-emerald-400 hover:underline font-semibold flex items-center gap-1"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Add Friend</span>
+                </button>
+              </div>
             </div>
             <p className="text-[11px] text-slate-400 mb-3">
-              Family members can log in with their own mobile number. Leave the mobile number blank if a member does not have one.
+              Friends have their meal counts filled and calculated separately from family members. You can click the badge to toggle between Family and Friend anytime.
             </p>
 
-            <div className="space-y-2.5 max-h-56 overflow-y-auto pr-1">
+            <div className="space-y-2.5 max-h-64 overflow-y-auto pr-1">
               {familyRows.map((row, idx) => (
-                <div key={idx} className="flex items-center gap-2 p-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
-                  <div className="flex-1">
+                <div
+                  key={idx}
+                  className={`p-2.5 rounded-xl border flex flex-col gap-2 transition-all ${
+                    row.is_friend
+                      ? 'bg-emerald-50/20 dark:bg-emerald-950/20 border-emerald-300 dark:border-emerald-800/80'
+                      : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    {/* Name */}
+                    <div className="flex-1">
+                      <input
+                        type="text"
+                        placeholder={row.is_friend ? `Friend ${idx + 1} Name` : `Family Member ${idx + 1} Name`}
+                        value={row.name}
+                        onChange={e => {
+                          const val = e.target.value;
+                          setFamilyRows(prev => {
+                            const updated = [...prev];
+                            updated[idx] = { ...updated[idx], name: val };
+                            return updated;
+                          });
+                        }}
+                        className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border rounded-lg text-xs outline-none"
+                      />
+                    </div>
+
+                    {/* Mobile */}
+                    <div className="w-28 sm:w-36">
+                      <input
+                        type="tel"
+                        maxLength={10}
+                        placeholder="Mobile"
+                        value={row.phone_number}
+                        onChange={e => {
+                          const val = e.target.value.replace(/\D/g, '');
+                          setFamilyRows(prev => {
+                            const updated = [...prev];
+                            updated[idx] = { ...updated[idx], phone_number: val };
+                            return updated;
+                          });
+                        }}
+                        className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border rounded-lg text-xs font-mono outline-none"
+                      />
+                    </div>
+
+                    {/* Type Switcher: Family vs Friend */}
+                    <button
+                      type="button"
+                      title="Click to toggle between Family and Friend"
+                      onClick={() => {
+                        setFamilyRows(prev => {
+                          const updated = [...prev];
+                          updated[idx] = { ...updated[idx], is_friend: !updated[idx].is_friend };
+                          return updated;
+                        });
+                      }}
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-colors flex items-center gap-1 shrink-0 ${
+                        row.is_friend
+                          ? 'bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 border-emerald-400'
+                          : 'bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-300 border-amber-400'
+                      }`}
+                    >
+                      {row.is_friend ? '🤝 Friend' : '👨‍👩‍👧 Family'}
+                    </button>
+
+                    {familyRows.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => setFamilyRows(prev => prev.filter((_, i) => i !== idx))}
+                        className="p-1.5 text-slate-400 hover:text-rose-500 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors"
+                        title="Remove"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Individual Community Cost input */}
+                  <div className="flex items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400 pl-1">
+                    <span>Individual Community Cost (₹):</span>
                     <input
-                      type="text"
-                      placeholder={`Member ${idx + 1} Name`}
-                      value={row.name}
+                      type="number"
+                      min="0"
+                      placeholder={`Inherit (${devoteeCommunityCost || communityCostPerMember})`}
+                      value={row.community_cost}
                       onChange={e => {
                         const val = e.target.value;
                         setFamilyRows(prev => {
                           const updated = [...prev];
-                          updated[idx] = { ...updated[idx], name: val };
+                          updated[idx] = { ...updated[idx], community_cost: val };
                           return updated;
                         });
                       }}
-                      className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border rounded-lg text-xs outline-none"
+                      className="w-24 px-2 py-0.5 bg-white dark:bg-slate-800 border rounded text-[11px] font-mono outline-none text-slate-800 dark:text-slate-200"
                     />
+                    <span className="text-[10px] text-slate-400">(optional override)</span>
                   </div>
-                  <div className="w-36 sm:w-40">
-                    <input
-                      type="tel"
-                      maxLength={10}
-                      placeholder="Mobile (Optional)"
-                      value={row.phone_number}
-                      onChange={e => {
-                        const val = e.target.value.replace(/\D/g, '');
-                        setFamilyRows(prev => {
-                          const updated = [...prev];
-                          updated[idx] = { ...updated[idx], phone_number: val };
-                          return updated;
-                        });
-                      }}
-                      className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border rounded-lg text-xs font-mono outline-none"
-                    />
-                  </div>
-                  {familyRows.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => setFamilyRows(prev => prev.filter((_, i) => i !== idx))}
-                      className="p-1.5 text-slate-400 hover:text-rose-500 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors"
-                      title="Remove Member"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  )}
                 </div>
               ))}
             </div>

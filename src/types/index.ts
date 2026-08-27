@@ -5,8 +5,12 @@ export type ExpenseStatus = 'APPROVED' | 'REJECTED';
 export type SettlementState = 'UNSETTLED' | 'PENDING_VERIFICATION' | 'SETTLED';
 
 export interface FamilyMember {
+  id?: string;
   name: string;
   phone_number?: string; // Optional: 10-digit mobile or empty/blank
+  is_friend?: boolean; // When true, count and calculations are kept separate
+  community_cost?: number; // Optional custom community cost override for this participant
+  monthly_counts?: Record<string, { breakfast: number; lunch: number; dinner: number }>; // cycle_month -> counts
 }
 
 export interface Devotee {
@@ -14,6 +18,7 @@ export interface Devotee {
   phone_number: string;
   group_name: string;
   family_members: (string | FamilyMember)[];
+  community_cost?: number; // Optional custom community cost per participant for this group
   is_admin?: boolean;
   created_at?: string;
 }
@@ -62,6 +67,18 @@ export interface SystemConfig {
   value: string;
 }
 
+export interface FriendSummary {
+  name: string;
+  phone_number?: string;
+  breakfast_total: number;
+  lunch_total: number;
+  dinner_total: number;
+  total_meals: number;
+  meals_cost: number;
+  community_cost: number;
+  total_cost: number; // meals_cost + community_cost
+}
+
 export interface DevoteeMonthlySummary {
   devotee: Devotee;
   cycle_month: string;
@@ -73,7 +90,7 @@ export interface DevoteeMonthlySummary {
   family_member_count: number;
   community_cost_per_member: number;
   community_cost: number;
-  prasadam_cost: number; // Meals Cost + Community Cost
+  prasadam_cost: number; // Combined Meals Cost + Community Cost (Family + Friends)
   approved_expenses: number;
   rejected_expenses: number;
   current_month_net: number; // Prasadam Cost - Approved Expenses
@@ -85,6 +102,12 @@ export interface DevoteeMonthlySummary {
   unfilled_days: number;
   is_locked: boolean;
   janmashtami_expenses: number;
+  // Separate Breakdown for Family vs Friends
+  family_meals_cost?: number;
+  family_community_cost?: number;
+  family_prasadam_cost?: number;
+  friends_summaries?: FriendSummary[];
+  friends_total_cost?: number;
 }
 
 export type ActiveTab = 'reports' | 'prasadam' | 'janmashtami' | 'admin';

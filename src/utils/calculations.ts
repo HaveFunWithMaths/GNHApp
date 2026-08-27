@@ -1,5 +1,5 @@
-import { PrasadamCount, Expense, MonthlyLedger, Devotee, DevoteeMonthlySummary } from '../types';
-import { getFamilyMemberNames } from './devoteeHelpers';
+import { PrasadamCount, Expense, MonthlyLedger, Devotee, DevoteeMonthlySummary, FriendSummary } from '../types';
+import { getFamilyMemberNames, getPureFamilyMembers, getFriendMembers } from './devoteeHelpers';
 
 export const PRASADAM_RATES = {
   breakfast: 40,
@@ -70,6 +70,22 @@ export function getCutoffDayFormatted(cycleMonth: string): string {
 }
 
 /**
+ * Returns exact formatted Cash Settlement Day string: N-1 day of the month, e.g. "30 Aug 2026"
+ */
+export function getCashSettlementDayFormatted(cycleMonth: string): string {
+  const [yearStr, monthStr] = cycleMonth.split('-');
+  const year = parseInt(yearStr, 10);
+  const month = parseInt(monthStr, 10);
+  const totalDays = new Date(year, month, 0).getDate();
+  const settlementDay = totalDays - 1; // N-1 day of the month
+  const date = new Date(year, month - 1, settlementDay);
+  const day = date.getDate();
+  const monthName = date.toLocaleDateString('en-US', { month: 'short' });
+  const yearNum = date.getFullYear();
+  return `${day} ${monthName} ${yearNum}`;
+}
+
+/**
  * Generates the custom Vaishnava reminder message for monthly prasadam & expense submissions
  */
 export function generateCustomReminderMessage(
@@ -78,7 +94,7 @@ export function generateCustomReminderMessage(
   devoteeName?: string
 ): string {
   const exactCutoff = getCutoffFormattedDate(cycleMonth);
-  const cutoffDay = getCutoffDayFormatted(cycleMonth);
+  const cashHandoverDay = getCashSettlementDayFormatted(cycleMonth);
   const greeting = devoteeName ? `Hare Krishna ${devoteeName}ji, PAMHO` : 'Hare Krishna, PAMHO';
   const baseUrl = 'https://gnh-app.vercel.app';
 
@@ -94,7 +110,7 @@ ${baseUrl}/?tab=reports&month=${cycleMonth}&phone=${phoneNumber}
 View your final contribution amount here once your details are entered.
 
 Step 3: Cash Settlement
-Please hand over the cash by ${cutoffDay}
+Please hand over the cash by ${cashHandoverDay}
 
 Kindly ensure these timelines are strictly adhered to so accounts can be finalized smoothly.
 
@@ -259,14 +275,60 @@ export function computeDevoteeMonthlySummary(
     }
   });
 
-  const total_meals = breakfast_total + lunch_total + dinner_total;
-  const meals_cost = calculateMealsCost(breakfast_total, lunch_total, dinner_total);
+  const family_meals_cost = calculateMealsCost(breakfast_total, lunch_total, dinner_total);
 
-  // Community cost calculation
-  const memberNames = getFamilyMemberNames(devotee);
-  const family_member_count = memberNames.length > 0 ? memberNames.length : 1;
-  const community_cost = family_member_count * communityCostPerMember;
-  const prasadam_cost = meals_cost + community_cost;
+  // Participant-level Community Cost Calculation
+  const defaultGroupCost = typeof devotee.community_cost === 'number' ? devotee.community_cost : communityCostPerMember;
+  const pureFamily = getPureFamilyMembers(devotee);
+  let family_community_cost = 0;
+  const family_member_count = pureFamily.length > 0 ? pureFamily.length : 1;
+
+  if (pureFamily.length > 0) {
+    pureFamily.forEach(member => {
+      const memberCost = typeof member.community_cost === 'number' ? member.community_cost : defaultGroupCost;
+      family_community_cost += memberCost;
+    });
+  } else {
+    family_community_cost = defaultGroupCost;
+  }
+
+  const family_prasadam_cost = family_meals_cost + family_community_cost;
+
+  // Separate Friend Breakdown Calculations
+  const friendMembers = getFriendMembers(devotee);
+  const friends_summaries: FriendSummary[] = friendMembers.map(friend => {
+    const friendCounts = friend.monthly_counts?.[cycleMonth] || { breakfast: 0, lunch: 0, dinner: 0 };
+    const fB = Math.max(0, friendCounts.breakfast || 0);
+    const fL = Math.max(0, friendCounts.lunch || 0);
+    const fD = Math.max(0, friendCounts.dinner || 0);
+    const fTotalMeals = fB + fL + fD;
+    const fMealsCost = calculateMealsCost(fB, fL, fD);
+    const fCommCost = typeof friend.community_cost === 'number' ? friend.community_cost : defaultGroupCost;
+    const fTotalCost = fMealsCost + fCommCost;
+
+    return {
+      name: friend.name,
+      phone_number: friend.phone_number,
+      breakfast_total: fB,
+      lunch_total: fL,
+      dinner_total: fD,
+      total_meals: fTotalMeals,
+      meals_cost: fMealsCost,
+      community_cost: fCommCost,
+      total_cost: fTotalCost,
+    };
+  });
+
+  const friends_total_meals = friends_summaries.reduce((sum, f) => sum + f.total_meals, 0);
+  const friends_meals_cost = friends_summaries.reduce((sum, f) => sum + f.meals_cost, 0);
+  const friends_community_cost = friends_summaries.reduce((sum, f) => sum + f.community_cost, 0);
+  const friends_total_cost = friends_summaries.reduce((sum, f) => sum + f.total_cost, 0);
+
+  // Combined Grand Totals
+  const total_meals = (breakfast_total + lunch_total + dinner_total) + friends_total_meals;
+  const meals_cost = family_meals_cost + friends_meals_cost;
+  const community_cost = family_community_cost + friends_community_cost;
+  const prasadam_cost = family_prasadam_cost + friends_total_cost;
 
   // Filter regular expenses for this devotee and cycle month
   const devoteeRegularExpenses = allExpenses.filter(
@@ -308,7 +370,7 @@ export function computeDevoteeMonthlySummary(
     total_meals,
     meals_cost,
     family_member_count,
-    community_cost_per_member: communityCostPerMember,
+    community_cost_per_member: defaultGroupCost,
     community_cost,
     prasadam_cost,
     approved_expenses,
@@ -322,6 +384,11 @@ export function computeDevoteeMonthlySummary(
     unfilled_days,
     is_locked,
     janmashtami_expenses,
+    family_meals_cost,
+    family_community_cost,
+    family_prasadam_cost,
+    friends_summaries,
+    friends_total_cost,
   };
 }
 

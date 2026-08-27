@@ -13,6 +13,8 @@ import {
   ChevronDown,
   ChevronUp,
   Sparkles,
+  Users,
+  UserCheck,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useApp } from '../context/AppContext';
@@ -274,7 +276,7 @@ export const ReportsPage: React.FC = () => {
               <div className="flex items-center gap-2">
                 <Calculator className="w-4 h-4 text-amber-500" />
                 <h4 className="text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-200">
-                  Prasadam Cost Calculation (Meals Cost + Community Cost)
+                  Prasadam Cost Calculations {summary.friends_summaries && summary.friends_summaries.length > 0 ? '(Family & Friends Itemized)' : '(Meals Cost + Community Cost)'}
                 </h4>
               </div>
               <button type="button" className="text-slate-400 hover:text-slate-600">
@@ -283,39 +285,117 @@ export const ReportsPage: React.FC = () => {
             </div>
 
             {showCalculationDetails && (
-              <div className="mt-3 space-y-2">
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 text-xs">
-                  <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-700/80">
-                    <div className="text-slate-400">Breakfast Cost (₹40 / plate)</div>
-                    <div className="font-bold text-slate-800 dark:text-slate-200 mt-0.5">
-                      {summary.breakfast_total} plates × ₹40 = <span className="text-amber-600 dark:text-amber-400">{formatRupee(bCost)}</span>
+              <div className="mt-4 space-y-4">
+                {/* 1. FAMILY PRASADAM STATEMENT */}
+                <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-700/80 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400 flex items-center gap-1.5">
+                      <Users className="w-3.5 h-3.5" />
+                      Family Calculation ({summary.family_member_count} {summary.family_member_count === 1 ? 'member' : 'members'})
+                    </span>
+                    <span className="text-xs font-mono font-bold text-slate-700 dark:text-slate-300">
+                      Subtotal: {formatRupee(summary.family_prasadam_cost ?? summary.prasadam_cost)}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 text-xs">
+                    <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-700/50">
+                      <div className="text-slate-400">Breakfast (₹40 / plate)</div>
+                      <div className="font-bold text-slate-800 dark:text-slate-200 mt-0.5">
+                        {summary.breakfast_total} plates × ₹40 = <span className="text-amber-600 dark:text-amber-400">{formatRupee(bCost)}</span>
+                      </div>
+                    </div>
+
+                    <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-700/50">
+                      <div className="text-slate-400">Lunch (₹80 / plate)</div>
+                      <div className="font-bold text-slate-800 dark:text-slate-200 mt-0.5">
+                        {summary.lunch_total} plates × ₹80 = <span className="text-amber-600 dark:text-amber-400">{formatRupee(lCost)}</span>
+                      </div>
+                    </div>
+
+                    <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-700/50">
+                      <div className="text-slate-400">Dinner (₹40 / plate)</div>
+                      <div className="font-bold text-slate-800 dark:text-slate-200 mt-0.5">
+                        {summary.dinner_total} plates × ₹40 = <span className="text-amber-600 dark:text-amber-400">{formatRupee(dCost)}</span>
+                      </div>
+                    </div>
+
+                    <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-700/50">
+                      <div className="text-slate-400">Family Community Cost</div>
+                      <div className="font-bold text-slate-800 dark:text-slate-200 mt-0.5">
+                        <span className="text-amber-600 dark:text-amber-400">{formatRupee(summary.family_community_cost ?? summary.community_cost)}</span>
+                      </div>
                     </div>
                   </div>
 
-                  <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-700/80">
-                    <div className="text-slate-400">Lunch Cost (₹80 / plate)</div>
-                    <div className="font-bold text-slate-800 dark:text-slate-200 mt-0.5">
-                      {summary.lunch_total} plates × ₹80 = <span className="text-amber-600 dark:text-amber-400">{formatRupee(lCost)}</span>
-                    </div>
-                  </div>
-
-                  <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-700/80">
-                    <div className="text-slate-400">Dinner Cost (₹40 / plate)</div>
-                    <div className="font-bold text-slate-800 dark:text-slate-200 mt-0.5">
-                      {summary.dinner_total} plates × ₹40 = <span className="text-amber-600 dark:text-amber-400">{formatRupee(dCost)}</span>
-                    </div>
-                  </div>
-
-                  <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-700/80">
-                    <div className="text-slate-400">Community Cost (₹{summary.community_cost_per_member} / member)</div>
-                    <div className="font-bold text-slate-800 dark:text-slate-200 mt-0.5">
-                      {summary.family_member_count} {summary.family_member_count === 1 ? 'member' : 'members'} × {formatRupee(summary.community_cost_per_member)} = <span className="text-amber-600 dark:text-amber-400">{formatRupee(summary.community_cost)}</span>
-                    </div>
+                  <div className="p-2 rounded-xl bg-amber-500/10 dark:bg-amber-950/30 text-xs text-slate-700 dark:text-slate-300 font-medium">
+                    <strong>Family Total:</strong> Meals ({formatRupee(summary.family_meals_cost ?? summary.meals_cost)}) + Community ({formatRupee(summary.family_community_cost ?? summary.community_cost)}) = <strong className="text-amber-700 dark:text-amber-300 font-bold">{formatRupee(summary.family_prasadam_cost ?? summary.prasadam_cost)}</strong>
                   </div>
                 </div>
 
-                <div className="p-2.5 rounded-xl bg-amber-500/10 dark:bg-amber-950/30 border border-amber-500/20 text-xs text-slate-700 dark:text-slate-300 font-medium">
-                  <strong>Prasadam Total:</strong> Meals Cost ({formatRupee(summary.meals_cost)}) + Community Cost ({formatRupee(summary.community_cost)}) = <strong className="text-amber-700 dark:text-amber-300 font-bold">{formatRupee(summary.prasadam_cost)}</strong> ({summary.total_meals} total meals across {summary.family_member_count} {summary.family_member_count === 1 ? 'family member' : 'family members'})
+                {/* 2. FRIENDS PRASADAM STATEMENT(S) */}
+                {summary.friends_summaries && summary.friends_summaries.map(friend => (
+                  <div key={friend.name} className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-800/60 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400 flex items-center gap-1.5">
+                        <UserCheck className="w-3.5 h-3.5" />
+                        Friend Calculation: {friend.name} {friend.phone_number ? `(+91 ${friend.phone_number})` : ''}
+                      </span>
+                      <span className="text-xs font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                        Subtotal: {formatRupee(friend.total_cost)}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 text-xs">
+                      <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-700/50">
+                        <div className="text-slate-400">Breakfast (₹40)</div>
+                        <div className="font-bold text-slate-800 dark:text-slate-200 mt-0.5">
+                          {friend.breakfast_total} plates = <span className="text-emerald-600 dark:text-emerald-400">{formatRupee(friend.breakfast_total * 40)}</span>
+                        </div>
+                      </div>
+
+                      <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-700/50">
+                        <div className="text-slate-400">Lunch (₹80)</div>
+                        <div className="font-bold text-slate-800 dark:text-slate-200 mt-0.5">
+                          {friend.lunch_total} plates = <span className="text-emerald-600 dark:text-emerald-400">{formatRupee(friend.lunch_total * 80)}</span>
+                        </div>
+                      </div>
+
+                      <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-700/50">
+                        <div className="text-slate-400">Dinner (₹40)</div>
+                        <div className="font-bold text-slate-800 dark:text-slate-200 mt-0.5">
+                          {friend.dinner_total} plates = <span className="text-emerald-600 dark:text-emerald-400">{formatRupee(friend.dinner_total * 40)}</span>
+                        </div>
+                      </div>
+
+                      <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-700/50">
+                        <div className="text-slate-400">Friend Community Cost</div>
+                        <div className="font-bold text-slate-800 dark:text-slate-200 mt-0.5">
+                          <span className="text-emerald-600 dark:text-emerald-400">{formatRupee(friend.community_cost)}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="p-2 rounded-xl bg-emerald-500/10 dark:bg-emerald-950/30 text-xs text-slate-700 dark:text-slate-300 font-medium">
+                      <strong>Friend Total:</strong> Meals ({formatRupee(friend.meals_cost)}) + Community Cost ({formatRupee(friend.community_cost)}) = <strong className="text-emerald-700 dark:text-emerald-300 font-bold">{formatRupee(friend.total_cost)}</strong> ({friend.total_meals} total meals)
+                    </div>
+                  </div>
+                ))}
+
+                {/* 3. FINAL GRAND TOTAL SUMMARY BANNER */}
+                <div className="p-3 sm:p-4 rounded-2xl bg-gradient-to-r from-amber-500/15 via-amber-500/10 to-orange-500/15 border border-amber-500/30 text-xs sm:text-sm text-slate-800 dark:text-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <strong>Prasadam Grand Total: </strong>
+                    {summary.friends_summaries && summary.friends_summaries.length > 0 ? (
+                      <span>
+                        Family ({formatRupee(summary.family_prasadam_cost ?? 0)}) + Friends ({formatRupee(summary.friends_total_cost ?? 0)}) ={' '}
+                      </span>
+                    ) : null}
+                    <strong className="text-amber-700 dark:text-amber-300 text-sm sm:text-base font-extrabold">{formatRupee(summary.prasadam_cost)}</strong>
+                    <span className="text-xs text-slate-500 block sm:inline sm:ml-2">
+                      ({summary.total_meals} total meals across all participants)
+                    </span>
+                  </div>
                 </div>
               </div>
             )}

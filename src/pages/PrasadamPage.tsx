@@ -1,13 +1,16 @@
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import {
   Utensils,
   Plus,
   Minus,
-  Save,
+  Check,
+  Loader2,
   Lock,
   Upload,
   Receipt,
   Eye,
+  Users,
+  UserCheck,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { Card } from '../components/common/Card';
@@ -22,8 +25,14 @@ import {
   formatMonthName,
   getDefaultExpenseDate,
   PRASADAM_RATES,
+  calculateMealsCost,
 } from '../utils/calculations';
-import { getFamilyMemberNames, getPrimaryFamilyMemberName } from '../utils/devoteeHelpers';
+import {
+  getFamilyMemberNames,
+  getPrimaryFamilyMemberName,
+  getPureFamilyMembers,
+  getFriendMembers,
+} from '../utils/devoteeHelpers';
 import { compressImage } from '../utils/imageCompressor';
 import { storageService } from '../services/storageService';
 
@@ -37,6 +46,7 @@ export const PrasadamPage: React.FC = () => {
     guestName,
     prasadamCounts,
     updateMonthlyMealCounts,
+    updateFriendMonthlyCounts,
     submitExpense,
     expenses,
     communityCostPerMember,
@@ -47,8 +57,16 @@ export const PrasadamPage: React.FC = () => {
 
   const isLocked = isCutoffPassed(activeMonth) && !isAdmin;
 
-  // Compute existing monthly totals for active devotee
-  const existingTotals = useMemo(() => {
+  // Family and Friend separation
+  const friendMembers = useMemo(() => (activeDevotee ? getFriendMembers(activeDevotee) : []), [activeDevotee]);
+  const pureFamily = useMemo(() => (activeDevotee ? getPureFamilyMembers(activeDevotee) : []), [activeDevotee]);
+  const familyMembers = useMemo(() => (activeDevotee ? getFamilyMemberNames(activeDevotee) : []), [activeDevotee]);
+
+  // Active participant tab: 'family' or 'friend:Name'
+  const [activeParticipantTab, setActiveParticipantTab] = useState<string>('family');
+
+  // Compute existing monthly totals for family
+  const familyTotals = useMemo(() => {
     if (!activeDevotee) return { b: 0, l: 0, d: 0 };
     const devoteeCounts = prasadamCounts.filter(
       (c: PrasadamCount) => c.devotee_id === activeDevotee.id && c.date.startsWith(activeMonth)
@@ -59,82 +77,181 @@ export const PrasadamPage: React.FC = () => {
     return { b, l, d };
   }, [prasadamCounts, activeDevotee, activeMonth]);
 
+  // Selected friend object (if friend tab is active)
+  const selectedFriend = useMemo(() => {
+    if (!activeParticipantTab.startsWith('friend:')) return null;
+    const friendName = activeParticipantTab.slice(7);
+    return friendMembers.find(f => f.name.toLowerCase().trim() === friendName.toLowerCase().trim()) || null;
+  }, [activeParticipantTab, friendMembers]);
+
+  // Existing totals for selected friend
+  const friendTotals = useMemo(() => {
+    if (!selectedFriend) return { b: 0, l: 0, d: 0 };
+    const mCounts = selectedFriend.monthly_counts?.[activeMonth];
+    return {
+      b: mCounts?.breakfast || 0,
+      l: mCounts?.lunch || 0,
+      d: mCounts?.dinner || 0,
+    };
+  }, [selectedFriend, activeMonth]);
+
   // Interactive editable state for monthly counts
   const [bCount, setBCount] = useState<number>(0);
   const [lCount, setLCount] = useState<number>(0);
   const [dCount, setDCount] = useState<number>(0);
-  const [isSavingCounts, setIsSavingCounts] = useState(false);
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [autosaveStatus, setAutosaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
 
-  // Sync state when activeDevotee or activeMonth changes
+  // Track if current state change was user-initiated
+  const isUserInputRef = useRef(false);
+  const autosaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Sync state when activeDevotee, activeMonth, or activeParticipantTab changes
   useEffect(() => {
-    setBCount(existingTotals.b);
-    setLCount(existingTotals.l);
-    setDCount(existingTotals.d);
-    setHasUnsavedChanges(false);
-  }, [existingTotals.b, existingTotals.l, existingTotals.d, activeMonth, activeDevotee?.id]);
+    isUserInputRef.current = false;
+    if (activeParticipantTab.startsWith('friend:')) {
+      setBCount(friendTotals.b);
+      setLCount(friendTotals.l);
+      setDCount(friendTotals.d);
+    } else {
+      setBCount(familyTotals.b);
+      setLCount(familyTotals.l);
+      setDCount(familyTotals.d);
+    }
+    setAutosaveStatus('idle');
+  }, [
+    activeParticipantTab,
+    familyTotals.b,
+    familyTotals.l,
+    familyTotals.d,
+    friendTotals.b,
+    friendTotals.l,
+    friendTotals.d,
+    activeMonth,
+    activeDevotee?.id,
+  ]);
+
+  // Reactive Debounced Autosave
+  useEffect(() => {
+    if (!isUserInputRef.current || !activeDevotee || isLocked) return;
+
+    setAutosaveStatus('saving');
+    if (autosaveTimeoutRef.current) {
+      clearTimeout(autosaveTimeoutRef.current);
+    }
+
+    autosaveTimeoutRef.current = setTimeout(async () => {
+      try {
+        if (activeParticipantTab.startsWith('friend:') && selectedFriend) {
+          await updateFriendMonthlyCounts(
+            activeDevotee.id,
+            selectedFriend.name,
+            activeMonth,
+            bCount,
+            lCount,
+            dCount,
+            { silent: true }
+          );
+        } else {
+          await updateMonthlyMealCounts(
+            activeDevotee.id,
+            activeMonth,
+            bCount,
+            lCount,
+            dCount,
+            { silent: true }
+          );
+        }
+        setAutosaveStatus('saved');
+      } catch (err) {
+        console.error('Autosave error:', err);
+        setAutosaveStatus('idle');
+      }
+    }, 400);
+
+    return () => {
+      if (autosaveTimeoutRef.current) {
+        clearTimeout(autosaveTimeoutRef.current);
+      }
+    };
+  }, [
+    bCount,
+    lCount,
+    dCount,
+    activeParticipantTab,
+    selectedFriend,
+    activeDevotee,
+    activeMonth,
+    isLocked,
+    updateMonthlyMealCounts,
+    updateFriendMonthlyCounts,
+  ]);
 
   // Handle direct value changes
   const handleUpdateB = (val: number) => {
+    isUserInputRef.current = true;
     const clamped = Math.max(0, val);
     setBCount(clamped);
-    setHasUnsavedChanges(true);
   };
 
   const handleUpdateL = (val: number) => {
+    isUserInputRef.current = true;
     const clamped = Math.max(0, val);
     setLCount(clamped);
-    setHasUnsavedChanges(true);
   };
 
   const handleUpdateD = (val: number) => {
+    isUserInputRef.current = true;
     const clamped = Math.max(0, val);
     setDCount(clamped);
-    setHasUnsavedChanges(true);
   };
 
-  // Save monthly counts
-  const handleSaveMonthlyCounts = async () => {
-    if (!activeDevotee) return;
-    if (isLocked) {
-      showToast({
-        type: 'error',
-        title: 'Editing Closed',
-        message: `Meal count booking closed on ${getCutoffFormattedDate(activeMonth)}.`,
-      });
-      return;
-    }
-
-    setIsSavingCounts(true);
-    try {
-      await updateMonthlyMealCounts(activeDevotee.id, activeMonth, bCount, lCount, dCount);
-      setHasUnsavedChanges(false);
-    } catch (err: any) {
-      showToast({
-        type: 'error',
-        title: 'Save Failed',
-        message: err.message || 'Could not save monthly meal counts.',
-      });
-    } finally {
-      setIsSavingCounts(false);
-    }
-  };
-
-
-  // Live calculated costs
+  // Live calculated costs for current section
   const bCost = bCount * PRASADAM_RATES.breakfast;
   const lCost = lCount * PRASADAM_RATES.lunch;
   const dCost = dCount * PRASADAM_RATES.dinner;
-  const totalMeals = bCount + lCount + dCount;
-  const mealsCost = bCost + lCost + dCost;
+  const currentTotalMeals = bCount + lCount + dCount;
+  const currentMealsCost = bCost + lCost + dCost;
 
-  const familyMembers = useMemo(() => {
-    return activeDevotee ? getFamilyMemberNames(activeDevotee) : [];
-  }, [activeDevotee]);
+  const defaultGroupCost = typeof activeDevotee?.community_cost === 'number' ? activeDevotee.community_cost : communityCostPerMember;
 
-  const memberCount = activeDevotee ? (familyMembers.length || 1) : 1;
-  const communityCost = memberCount * communityCostPerMember;
-  const totalPrasadamCost = mealsCost + communityCost;
+  let currentCommunityCost = 0;
+  if (selectedFriend) {
+    currentCommunityCost = typeof selectedFriend.community_cost === 'number' ? selectedFriend.community_cost : defaultGroupCost;
+  } else {
+    if (pureFamily.length > 0) {
+      currentCommunityCost = pureFamily.reduce(
+        (sum, m) => sum + (typeof m.community_cost === 'number' ? m.community_cost : defaultGroupCost),
+        0
+      );
+    } else {
+      currentCommunityCost = defaultGroupCost;
+    }
+  }
+
+  const currentTotalPrasadamCost = currentMealsCost + currentCommunityCost;
+
+  // Live Grand Total Across Family & All Friends
+  const familyLiveMealsCost = selectedFriend
+    ? calculateMealsCost(familyTotals.b, familyTotals.l, familyTotals.d)
+    : currentMealsCost;
+  const familyLiveCommunityCost = pureFamily.length > 0
+    ? pureFamily.reduce((sum, m) => sum + (typeof m.community_cost === 'number' ? m.community_cost : defaultGroupCost), 0)
+    : defaultGroupCost;
+  const familyLiveTotal = familyLiveMealsCost + familyLiveCommunityCost;
+
+  let friendsLiveTotal = 0;
+  friendMembers.forEach(f => {
+    if (selectedFriend && f.name.toLowerCase().trim() === selectedFriend.name.toLowerCase().trim()) {
+      friendsLiveTotal += currentTotalPrasadamCost;
+    } else {
+      const counts = f.monthly_counts?.[activeMonth] || { breakfast: 0, lunch: 0, dinner: 0 };
+      const mCost = calculateMealsCost(counts.breakfast || 0, counts.lunch || 0, counts.dinner || 0);
+      const cCost = typeof f.community_cost === 'number' ? f.community_cost : defaultGroupCost;
+      friendsLiveTotal += (mCost + cCost);
+    }
+  });
+
+  const grandTotalCost = familyLiveTotal + friendsLiveTotal;
 
   // Resolve default payer name helper (defaults single family member or logged in member)
   const getDefaultPayer = useCallback(() => {
@@ -310,12 +427,24 @@ export const PrasadamPage: React.FC = () => {
                   <Badge variant="saffron" size="sm">Direct Input</Badge>
                 </div>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  Enter your total monthly Breakfast, Lunch, and Dinner counts directly.
+                  Enter monthly Breakfast, Lunch, and Dinner counts. All entries autosave in real time.
                 </p>
               </div>
             </div>
 
             <div className="flex items-center gap-2">
+              {autosaveStatus === 'saving' ? (
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 animate-pulse">
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                  <span>Autosaving...</span>
+                </span>
+              ) : autosaveStatus === 'saved' ? (
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                  <Check className="w-3 h-3" />
+                  <span>Saved ✓</span>
+                </span>
+              ) : null}
+
               {isLocked ? (
                 <Badge variant="danger" size="sm">
                   <Lock className="w-3 h-3" />
@@ -328,6 +457,57 @@ export const PrasadamPage: React.FC = () => {
               )}
             </div>
           </div>
+
+          {/* Participant Tab Switcher (Family vs Friend) */}
+          {friendMembers.length > 0 && (
+            <div className="flex items-center gap-2 overflow-x-auto pb-1 mt-4 pt-3 border-t border-slate-100 dark:border-slate-800/80">
+              <button
+                type="button"
+                onClick={() => setActiveParticipantTab('family')}
+                className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all shadow-xs ${
+                  activeParticipantTab === 'family'
+                    ? 'bg-amber-500 text-slate-950 ring-2 ring-amber-500/30'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                }`}
+              >
+                <Users className="w-3.5 h-3.5" />
+                <span>Family Counts ({pureFamily.length || 1} {pureFamily.length === 1 ? 'member' : 'members'})</span>
+              </button>
+
+              {friendMembers.map(friend => {
+                const tabKey = `friend:${friend.name}`;
+                const isCurrent = activeParticipantTab === tabKey;
+                return (
+                  <button
+                    key={friend.name}
+                    type="button"
+                    onClick={() => setActiveParticipantTab(tabKey)}
+                    className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all shadow-xs ${
+                      isCurrent
+                        ? 'bg-amber-500 text-slate-950 ring-2 ring-amber-500/30'
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                    }`}
+                  >
+                    <UserCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                    <span>Friend: {friend.name}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Active Participant Banner */}
+          {selectedFriend && (
+            <div className="mt-3 p-2.5 rounded-xl bg-emerald-500/10 dark:bg-emerald-950/30 border border-emerald-500/30 text-xs flex items-center justify-between text-emerald-800 dark:text-emerald-300">
+              <span className="font-semibold flex items-center gap-1.5">
+                <UserCheck className="w-3.5 h-3.5" />
+                Filling separate meal count for Friend: <strong>{selectedFriend.name}</strong>
+              </span>
+              <span className="font-mono text-[11px] bg-white dark:bg-slate-900 px-2 py-0.5 rounded-md border border-emerald-500/20">
+                Community Cost: ₹{currentCommunityCost}
+              </span>
+            </div>
+          )}
 
           {/* 3 Interactive Slot Input Cards */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-5">
@@ -492,46 +672,52 @@ export const PrasadamPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Grand Total & Save Action Bar */}
+        {/* Grand Total Bar (No Manual Save Button - Real-time Autosave) */}
         <div className="p-5 sm:p-6 bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-orange-500/10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2">
               <span className="text-xs uppercase tracking-wider font-bold text-slate-500 dark:text-slate-400">
-                Grand Total Prasadam
+                {selectedFriend ? `Friend: ${selectedFriend.name}` : 'Family Prasadam'}
               </span>
               <span className="text-xs font-mono font-bold bg-amber-500/20 text-amber-800 dark:text-amber-300 px-2 py-0.5 rounded-md">
-                {totalMeals} total meals
+                {currentTotalMeals} meals
               </span>
             </div>
             <div className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white mt-0.5">
-              {formatRupee(totalPrasadamCost)}
+              {formatRupee(currentTotalPrasadamCost)}
             </div>
             <div className="text-xs text-slate-600 dark:text-slate-300 mt-1 flex items-center gap-1.5 flex-wrap">
-              <span>Meals {formatRupee(mealsCost)} ({formatRupee(bCost)} + {formatRupee(lCost)} + {formatRupee(dCost)})</span>
+              <span>Meals {formatRupee(currentMealsCost)}</span>
               <span>+</span>
-              <span>Community Cost {formatRupee(communityCost)} ({memberCount} {memberCount === 1 ? 'member' : 'members'} × {formatRupee(communityCostPerMember)})</span>
+              <span>Community Cost {formatRupee(currentCommunityCost)}</span>
               <span>=</span>
-              <strong className="text-amber-700 dark:text-amber-300 font-bold">{formatRupee(totalPrasadamCost)}</strong>
+              <strong className="text-amber-700 dark:text-amber-300 font-bold">{formatRupee(currentTotalPrasadamCost)}</strong>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            {hasUnsavedChanges && (
-              <span className="text-xs font-semibold text-amber-600 dark:text-amber-400 animate-pulse">
-                ● Unsaved counts
-              </span>
+          <div className="flex flex-col sm:items-end gap-1.5 border-t sm:border-t-0 pt-3 sm:pt-0 border-slate-200 dark:border-slate-700">
+            {friendMembers.length > 0 && (
+              <div className="text-right">
+                <div className="text-xs font-bold text-slate-500 dark:text-slate-400">
+                  Grand Total (Family + All Friends)
+                </div>
+                <div className="text-xl font-extrabold text-amber-600 dark:text-amber-400 font-mono">
+                  {formatRupee(grandTotalCost)}
+                </div>
+              </div>
             )}
-            <Button
-              onClick={handleSaveMonthlyCounts}
-              variant="saffron"
-              size="lg"
-              disabled={isLocked || isSavingCounts}
-              isLoading={isSavingCounts}
-              className="w-full sm:w-auto shadow-md"
-            >
-              <Save className="w-4 h-4 mr-1.5" />
-              <span>Save Monthly Counts</span>
-            </Button>
+
+            <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+              {autosaveStatus === 'saving' ? (
+                <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400 font-medium">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" /> Saving changes...
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-medium">
+                  <Check className="w-3.5 h-3.5" /> All counts autosaved
+                </span>
+              )}
+            </div>
           </div>
         </div>
       </Card>

@@ -62,7 +62,23 @@ interface AppContextType {
   updateAdminPin: (newPin: string) => Promise<void>;
   updatePrasadamCount: (count: PrasadamCount) => Promise<void>;
   batchUpdatePrasadamCounts: (counts: PrasadamCount[]) => Promise<void>;
-  updateMonthlyMealCounts: (devoteeId: string, month: string, b: number, l: number, d: number) => Promise<void>;
+  updateMonthlyMealCounts: (
+    devoteeId: string,
+    month: string,
+    b: number,
+    l: number,
+    d: number,
+    options?: { silent?: boolean }
+  ) => Promise<void>;
+  updateFriendMonthlyCounts: (
+    devoteeId: string,
+    friendName: string,
+    month: string,
+    b: number,
+    l: number,
+    d: number,
+    options?: { silent?: boolean }
+  ) => Promise<void>;
   autoFillCounts: (targetDevoteeId?: string) => Promise<number>;
   submitExpense: (expense: Omit<Expense, 'id' | 'created_at'>) => Promise<Expense>;
   reviewExpense: (id: string, status: 'APPROVED' | 'REJECTED', reason?: string) => Promise<void>;
@@ -381,16 +397,51 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     month: string,
     b: number,
     l: number,
-    d: number
+    d: number,
+    options?: { silent?: boolean }
   ) => {
     await storageService.saveMonthlyPrasadamCounts(devoteeId, month, b, l, d);
     const updated = await storageService.getPrasadamCounts(month);
     setPrasadamCounts(updated);
-    showToast({
-      type: 'success',
-      title: 'Monthly Counts Saved',
-      message: `Saved total: ${b} Breakfasts, ${l} Lunches, ${d} Dinners.`,
-    });
+    if (!options?.silent) {
+      showToast({
+        type: 'success',
+        title: 'Monthly Counts Saved',
+        message: `Saved total: ${b} Breakfasts, ${l} Lunches, ${d} Dinners.`,
+      });
+    }
+  };
+
+  const updateFriendMonthlyCounts = async (
+    devoteeId: string,
+    friendName: string,
+    month: string,
+    b: number,
+    l: number,
+    d: number,
+    options?: { silent?: boolean }
+  ) => {
+    const updatedDevotee = await storageService.saveFriendMonthlyCounts(
+      devoteeId,
+      friendName,
+      month,
+      b,
+      l,
+      d
+    );
+    if (updatedDevotee) {
+      setDevotees(prev => prev.map(d => (d.id === updatedDevotee.id ? updatedDevotee : d)));
+      if (activeDevotee?.id === updatedDevotee.id) {
+        setActiveDevotee(updatedDevotee);
+      }
+      if (!options?.silent) {
+        showToast({
+          type: 'success',
+          title: 'Friend Counts Saved',
+          message: `Saved counts for ${friendName}: ${b} B, ${l} L, ${d} D.`,
+        });
+      }
+    }
   };
 
   const autoFillCounts = async (targetDevoteeId?: string): Promise<number> => {
@@ -591,6 +642,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updatePrasadamCount,
         batchUpdatePrasadamCounts,
         updateMonthlyMealCounts,
+        updateFriendMonthlyCounts,
         autoFillCounts,
         submitExpense,
         reviewExpense,

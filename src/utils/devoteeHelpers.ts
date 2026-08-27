@@ -16,11 +16,16 @@ export function normalizeFamilyMember(member: string | FamilyMember): FamilyMemb
     return {
       name: member.trim(),
       phone_number: undefined,
+      is_friend: false,
     };
   }
   return {
+    id: member.id,
     name: (member.name || '').trim(),
     phone_number: member.phone_number ? cleanPhoneNumber(member.phone_number) : undefined,
+    is_friend: Boolean(member.is_friend),
+    community_cost: typeof member.community_cost === 'number' ? member.community_cost : undefined,
+    monthly_counts: member.monthly_counts || {},
   };
 }
 
@@ -35,7 +40,7 @@ export function normalizeFamilyMembers(devotee?: Devotee | null): FamilyMember[]
 }
 
 /**
- * Returns an array of pure names of all family members
+ * Returns an array of pure names of all family members and friends
  */
 export function getFamilyMemberNames(devotee?: Devotee | null): string[] {
   if (!devotee) return [];
@@ -47,11 +52,41 @@ export function getFamilyMemberNames(devotee?: Devotee | null): string[] {
 }
 
 /**
+ * Returns only genuine family members (excluding friends)
+ */
+export function getPureFamilyMembers(devotee?: Devotee | null): FamilyMember[] {
+  if (!devotee) return [];
+  const normalized = normalizeFamilyMembers(devotee);
+  return normalized.filter(m => !m.is_friend);
+}
+
+/**
+ * Returns only friend participants
+ */
+export function getFriendMembers(devotee?: Devotee | null): FamilyMember[] {
+  if (!devotee) return [];
+  const normalized = normalizeFamilyMembers(devotee);
+  return normalized.filter(m => Boolean(m.is_friend));
+}
+
+/**
+ * Returns pure names of family members (excluding friends)
+ */
+export function getPureFamilyMemberNames(devotee?: Devotee | null): string[] {
+  if (!devotee) return [];
+  const family = getPureFamilyMembers(devotee);
+  if (family.length === 0 && devotee.group_name) {
+    return [devotee.group_name];
+  }
+  return family.map(m => m.name);
+}
+
+/**
  * Returns the primary family member or devotee display name
  */
 export function getPrimaryFamilyMemberName(devotee?: Devotee | null): string {
   if (!devotee) return '';
-  const names = getFamilyMemberNames(devotee);
+  const names = getPureFamilyMemberNames(devotee);
   return names[0] || devotee.group_name;
 }
 
@@ -138,15 +173,16 @@ export function formatDevoteeFamilyDisplay(devotee?: Devotee | null, includePhon
   if (members.length === 0) return devotee.group_name || '';
 
   if (!includePhones) {
-    return members.map(m => m.name).join(', ');
+    return members.map(m => m.is_friend ? `${m.name} [Friend]` : m.name).join(', ');
   }
 
   return members
     .map(m => {
+      const tag = m.is_friend ? ' [Friend]' : '';
       if (m.phone_number && cleanPhoneNumber(m.phone_number).length === 10) {
-        return `${m.name} (${cleanPhoneNumber(m.phone_number)})`;
+        return `${m.name}${tag} (${cleanPhoneNumber(m.phone_number)})`;
       }
-      return m.name;
+      return `${m.name}${tag}`;
     })
     .join(', ');
 }
