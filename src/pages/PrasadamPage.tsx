@@ -11,6 +11,7 @@ import {
   Eye,
   Users,
   UserCheck,
+  Save,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { Card } from '../components/common/Card';
@@ -50,12 +51,11 @@ export const PrasadamPage: React.FC = () => {
     submitExpense,
     expenses,
     communityCostPerMember,
-    isAdmin,
     showToast,
     setIsLoginModalOpen,
   } = useApp();
 
-  const isLocked = isCutoffPassed(activeMonth) && !isAdmin;
+  const isCutoff = isCutoffPassed(activeMonth);
 
   // Family and Friend separation
   const friendMembers = useMemo(() => (activeDevotee ? getFriendMembers(activeDevotee) : []), [activeDevotee]);
@@ -100,6 +100,7 @@ export const PrasadamPage: React.FC = () => {
   const [lCount, setLCount] = useState<number>(0);
   const [dCount, setDCount] = useState<number>(0);
   const [autosaveStatus, setAutosaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const [isManualSaving, setIsManualSaving] = useState(false);
 
   // Track if current state change was user-initiated
   const isUserInputRef = useRef(false);
@@ -132,7 +133,7 @@ export const PrasadamPage: React.FC = () => {
 
   // Reactive Debounced Autosave
   useEffect(() => {
-    if (!isUserInputRef.current || !activeDevotee || isLocked) return;
+    if (!isUserInputRef.current || !activeDevotee) return;
 
     setAutosaveStatus('saving');
     if (autosaveTimeoutRef.current) {
@@ -181,10 +182,50 @@ export const PrasadamPage: React.FC = () => {
     selectedFriend,
     activeDevotee,
     activeMonth,
-    isLocked,
     updateMonthlyMealCounts,
     updateFriendMonthlyCounts,
   ]);
+
+  // Direct manual save action
+  const handleSaveCounts = async () => {
+    if (!activeDevotee) return;
+    if (autosaveTimeoutRef.current) {
+      clearTimeout(autosaveTimeoutRef.current);
+    }
+    setIsManualSaving(true);
+    try {
+      if (activeParticipantTab.startsWith('friend:') && selectedFriend) {
+        await updateFriendMonthlyCounts(
+          activeDevotee.id,
+          selectedFriend.name,
+          activeMonth,
+          bCount,
+          lCount,
+          dCount,
+          { silent: false }
+        );
+      } else {
+        await updateMonthlyMealCounts(
+          activeDevotee.id,
+          activeMonth,
+          bCount,
+          lCount,
+          dCount,
+          { silent: false }
+        );
+      }
+      setAutosaveStatus('saved');
+    } catch (err) {
+      console.error('Error saving counts:', err);
+      showToast({
+        type: 'error',
+        title: 'Failed to Save',
+        message: 'Could not save prasadam counts. Please try again.',
+      });
+    } finally {
+      setIsManualSaving(false);
+    }
+  };
 
   // Handle direct value changes
   const handleUpdateB = (val: number) => {
@@ -427,12 +468,12 @@ export const PrasadamPage: React.FC = () => {
                   <Badge variant="saffron" size="sm">Direct Input</Badge>
                 </div>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  Enter monthly Breakfast, Lunch, and Dinner counts. All entries autosave in real time.
+                  Enter monthly Breakfast, Lunch, and Dinner counts. You can save counts anytime or let them autosave.
                 </p>
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2.5 flex-wrap">
               {autosaveStatus === 'saving' ? (
                 <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 animate-pulse">
                   <Loader2 className="w-3 h-3 animate-spin" />
@@ -445,7 +486,7 @@ export const PrasadamPage: React.FC = () => {
                 </span>
               ) : null}
 
-              {isLocked ? (
+              {isCutoff ? (
                 <Badge variant="danger" size="sm">
                   <Lock className="w-3 h-3" />
                   <span>Closed: {getCutoffFormattedDate(activeMonth)}</span>
@@ -455,6 +496,18 @@ export const PrasadamPage: React.FC = () => {
                   <span>Entry Open</span>
                 </Badge>
               )}
+
+              <Button
+                type="button"
+                variant="saffron"
+                size="sm"
+                isLoading={isManualSaving}
+                onClick={handleSaveCounts}
+                className="font-bold shadow-xs hover:shadow-md"
+              >
+                <Save className="w-3.5 h-3.5 mr-1" />
+                <span>Save</span>
+              </Button>
             </div>
           </div>
 
@@ -524,7 +577,7 @@ export const PrasadamPage: React.FC = () => {
                 <div className="flex items-center justify-between gap-3 mt-3">
                   <button
                     type="button"
-                    disabled={isLocked || bCount <= 0}
+                    disabled={bCount <= 0}
                     onClick={() => handleUpdateB(bCount - 1)}
                     className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-black flex items-center justify-center hover:bg-slate-200 dark:hover:bg-slate-600 disabled:opacity-30 transition-colors shadow-xs"
                   >
@@ -536,7 +589,6 @@ export const PrasadamPage: React.FC = () => {
                       type="number"
                       min="0"
                       max="1000"
-                      disabled={isLocked}
                       value={bCount === 0 ? '' : bCount}
                       placeholder="0"
                       onChange={e => handleUpdateB(parseInt(e.target.value) || 0)}
@@ -547,9 +599,8 @@ export const PrasadamPage: React.FC = () => {
 
                   <button
                     type="button"
-                    disabled={isLocked}
                     onClick={() => handleUpdateB(bCount + 1)}
-                    className="w-10 h-10 rounded-xl bg-amber-500 text-slate-950 font-black flex items-center justify-center hover:bg-amber-400 disabled:opacity-30 transition-colors shadow-xs"
+                    className="w-10 h-10 rounded-xl bg-amber-500 text-slate-950 font-black flex items-center justify-center hover:bg-amber-400 transition-colors shadow-xs"
                   >
                     <Plus className="w-4 h-4" />
                   </button>
@@ -577,7 +628,7 @@ export const PrasadamPage: React.FC = () => {
                 <div className="flex items-center justify-between gap-3 mt-3">
                   <button
                     type="button"
-                    disabled={isLocked || lCount <= 0}
+                    disabled={lCount <= 0}
                     onClick={() => handleUpdateL(lCount - 1)}
                     className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-black flex items-center justify-center hover:bg-slate-200 dark:hover:bg-slate-600 disabled:opacity-30 transition-colors shadow-xs"
                   >
@@ -589,7 +640,6 @@ export const PrasadamPage: React.FC = () => {
                       type="number"
                       min="0"
                       max="1000"
-                      disabled={isLocked}
                       value={lCount === 0 ? '' : lCount}
                       placeholder="0"
                       onChange={e => handleUpdateL(parseInt(e.target.value) || 0)}
@@ -600,9 +650,8 @@ export const PrasadamPage: React.FC = () => {
 
                   <button
                     type="button"
-                    disabled={isLocked}
                     onClick={() => handleUpdateL(lCount + 1)}
-                    className="w-10 h-10 rounded-xl bg-amber-500 text-slate-950 font-black flex items-center justify-center hover:bg-amber-400 disabled:opacity-30 transition-colors shadow-xs"
+                    className="w-10 h-10 rounded-xl bg-amber-500 text-slate-950 font-black flex items-center justify-center hover:bg-amber-400 transition-colors shadow-xs"
                   >
                     <Plus className="w-4 h-4" />
                   </button>
@@ -630,7 +679,7 @@ export const PrasadamPage: React.FC = () => {
                 <div className="flex items-center justify-between gap-3 mt-3">
                   <button
                     type="button"
-                    disabled={isLocked || dCount <= 0}
+                    disabled={dCount <= 0}
                     onClick={() => handleUpdateD(dCount - 1)}
                     className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-black flex items-center justify-center hover:bg-slate-200 dark:hover:bg-slate-600 disabled:opacity-30 transition-colors shadow-xs"
                   >
@@ -642,7 +691,6 @@ export const PrasadamPage: React.FC = () => {
                       type="number"
                       min="0"
                       max="1000"
-                      disabled={isLocked}
                       value={dCount === 0 ? '' : dCount}
                       placeholder="0"
                       onChange={e => handleUpdateD(parseInt(e.target.value) || 0)}
@@ -653,9 +701,8 @@ export const PrasadamPage: React.FC = () => {
 
                   <button
                     type="button"
-                    disabled={isLocked}
                     onClick={() => handleUpdateD(dCount + 1)}
-                    className="w-10 h-10 rounded-xl bg-amber-500 text-slate-950 font-black flex items-center justify-center hover:bg-amber-400 disabled:opacity-30 transition-colors shadow-xs"
+                    className="w-10 h-10 rounded-xl bg-amber-500 text-slate-950 font-black flex items-center justify-center hover:bg-amber-400 transition-colors shadow-xs"
                   >
                     <Plus className="w-4 h-4" />
                   </button>
@@ -672,7 +719,7 @@ export const PrasadamPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Grand Total Bar (No Manual Save Button - Real-time Autosave) */}
+        {/* Grand Total Bar with Manual Save Button & Real-time status */}
         <div className="p-5 sm:p-6 bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-orange-500/10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2">
@@ -695,7 +742,7 @@ export const PrasadamPage: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex flex-col sm:items-end gap-1.5 border-t sm:border-t-0 pt-3 sm:pt-0 border-slate-200 dark:border-slate-700">
+          <div className="flex flex-col sm:items-end gap-2.5 border-t sm:border-t-0 pt-3 sm:pt-0 border-slate-200 dark:border-slate-700">
             {friendMembers.length > 0 && (
               <div className="text-right">
                 <div className="text-xs font-bold text-slate-500 dark:text-slate-400">
@@ -707,16 +754,30 @@ export const PrasadamPage: React.FC = () => {
               </div>
             )}
 
-            <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-              {autosaveStatus === 'saving' ? (
-                <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400 font-medium">
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" /> Saving changes...
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-medium">
-                  <Check className="w-3.5 h-3.5" /> All counts autosaved
-                </span>
-              )}
+            <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
+              <div className="text-xs text-slate-500 dark:text-slate-400">
+                {autosaveStatus === 'saving' ? (
+                  <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400 font-medium">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" /> Saving...
+                  </span>
+                ) : autosaveStatus === 'saved' ? (
+                  <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-medium">
+                    <Check className="w-3.5 h-3.5" /> Autosaved
+                  </span>
+                ) : null}
+              </div>
+
+              <Button
+                type="button"
+                variant="saffron"
+                size="md"
+                isLoading={isManualSaving}
+                onClick={handleSaveCounts}
+                className="font-bold shadow-md hover:shadow-lg transition-all"
+              >
+                <Save className="w-4 h-4 mr-1.5" />
+                <span>Save {selectedFriend ? `${selectedFriend.name}'s Counts` : 'Prasadam Counts'}</span>
+              </Button>
             </div>
           </div>
         </div>
