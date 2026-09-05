@@ -1,7 +1,7 @@
 export type MealType = 'breakfast' | 'lunch' | 'dinner';
 
 export type ExpenseType = 'REGULAR' | 'JANMASHTAMI';
-export type ExpenseStatus = 'APPROVED' | 'REJECTED';
+export type ExpenseStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
 export type SettlementState = 'UNSETTLED' | 'PENDING_VERIFICATION' | 'SETTLED';
 
 export interface FamilyMember {
@@ -93,7 +93,9 @@ export interface DevoteeMonthlySummary {
   prasadam_cost: number; // Combined Meals Cost + Community Cost (Family + Friends)
   approved_expenses: number;
   rejected_expenses: number;
-  current_month_net: number; // Prasadam Cost - Approved Expenses
+  pending_expenses: number;
+  has_pending_expenses: boolean;
+  current_month_net: number; // Prasadam Cost - (Approved + Assumed Pending Expenses)
   carried_forward: number;
   settlement_reported: number;
   settlement_status: SettlementState;

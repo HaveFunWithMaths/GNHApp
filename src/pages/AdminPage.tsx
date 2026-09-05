@@ -21,6 +21,10 @@ import {
   ExternalLink,
   Receipt,
   Sparkles,
+  Check,
+  X,
+  Calendar,
+  Info,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { Card } from '../components/common/Card';
@@ -37,6 +41,8 @@ import {
   generateCustomReminderMessage,
   formatDevoteeName,
   getNextCycleMonth,
+  formatExpenseDate,
+  formatSubmissionDateTime,
 } from '../utils/calculations';
 import {
   normalizeFamilyMembers,
@@ -49,7 +55,7 @@ import {
 } from '../utils/devoteeHelpers';
 import { exportToExcel, exportToPDF } from '../utils/exportHelpers';
 
-type AdminTab = 'matrix' | 'regular-expenses' | 'janmashtami-expenses' | 'settlement' | 'whatsapp' | 'devotees' | 'settings';
+type AdminTab = 'matrix' | 'expenses' | 'regular-expenses' | 'janmashtami-expenses' | 'settlement' | 'whatsapp' | 'devotees' | 'settings';
 
 export const AdminPage: React.FC = () => {
   const {
@@ -89,9 +95,12 @@ export const AdminPage: React.FC = () => {
   const [rejectingExpense, setRejectingExpense] = useState<Expense | null>(null);
   const [rejectionReason, setRejectionReason] = useState('');
 
+  // Expenses Subcategory State
+  const [expenseSubcategory, setExpenseSubcategory] = useState<'REGULAR' | 'JANMASHTAMI'>('REGULAR');
+
   // Status Filters for Expenses
-  const [regularStatusFilter, setRegularStatusFilter] = useState<'ALL' | 'APPROVED' | 'REJECTED'>('ALL');
-  const [janmashtamiStatusFilter, setJanmashtamiStatusFilter] = useState<'ALL' | 'APPROVED' | 'REJECTED'>('ALL');
+  const [regularStatusFilter, setRegularStatusFilter] = useState<'ALL' | 'PENDING' | 'APPROVED' | 'REJECTED'>('ALL');
+  const [janmashtamiStatusFilter, setJanmashtamiStatusFilter] = useState<'ALL' | 'PENDING' | 'APPROVED' | 'REJECTED'>('ALL');
 
   // Carry Forward Adjustment Modal
   const [editingCarryForwardDevotee, setEditingCarryForwardDevotee] = useState<DevoteeMonthlySummary | null>(null);
@@ -194,11 +203,23 @@ export const AdminPage: React.FC = () => {
     });
   }, [allDevoteeSummaries, searchTerm]);
 
-  // Separate Regular and Janmashtami expenses
-  const regularExpenses = useMemo(() => {
-    return expenses.filter(e => e.type === 'REGULAR');
-  }, [expenses]);
+  // Helper to extract month strictly from Date of Expense (e.date or fallback created_at)
+  const getExpenseMonth = (e: Expense): string => {
+    const rawDate = e.date || (e.created_at ? e.created_at.slice(0, 10) : '');
+    return rawDate.slice(0, 7);
+  };
 
+  // Month-filtered expenses strictly for activeMonth based on Date of Expense
+  const monthExpenses = useMemo(() => {
+    return expenses.filter(e => getExpenseMonth(e) === activeMonth);
+  }, [expenses, activeMonth]);
+
+  // Separate Regular and Janmashtami expenses strictly for activeMonth
+  const regularExpenses = useMemo(() => {
+    return monthExpenses.filter(e => e.type === 'REGULAR');
+  }, [monthExpenses]);
+
+  // Janmashtami expenses are NOT categorized by month - showing expenses for all time
   const janmashtamiExpenses = useMemo(() => {
     return expenses.filter(e => e.type === 'JANMASHTAMI');
   }, [expenses]);
@@ -235,7 +256,7 @@ export const AdminPage: React.FC = () => {
     });
   }, [janmashtamiExpenses, janmashtamiStatusFilter, searchTerm, devotees]);
 
-  // Regular Expense Financial Totals
+  // Regular Expense Financial Totals for Active Month
   const totalRegularAmount = useMemo(() => {
     return regularExpenses.reduce((sum, e) => sum + Number(e.amount), 0);
   }, [regularExpenses]);
@@ -244,11 +265,19 @@ export const AdminPage: React.FC = () => {
     return regularExpenses.filter(e => e.status === 'APPROVED').reduce((sum, e) => sum + Number(e.amount), 0);
   }, [regularExpenses]);
 
+  const pendingRegularAmount = useMemo(() => {
+    return regularExpenses.filter(e => e.status === 'PENDING').reduce((sum, e) => sum + Number(e.amount), 0);
+  }, [regularExpenses]);
+
   const rejectedRegularAmount = useMemo(() => {
     return regularExpenses.filter(e => e.status === 'REJECTED').reduce((sum, e) => sum + Number(e.amount), 0);
   }, [regularExpenses]);
 
-  // Janmashtami Expense Financial Totals
+  const pendingRegularCount = useMemo(() => {
+    return regularExpenses.filter(e => e.status === 'PENDING').length;
+  }, [regularExpenses]);
+
+  // Janmashtami Expense Financial Totals for Active Month
   const totalJanmashtamiAmount = useMemo(() => {
     return janmashtamiExpenses.reduce((sum, e) => sum + Number(e.amount), 0);
   }, [janmashtamiExpenses]);
@@ -257,9 +286,21 @@ export const AdminPage: React.FC = () => {
     return janmashtamiExpenses.filter(e => e.status === 'APPROVED').reduce((sum, e) => sum + Number(e.amount), 0);
   }, [janmashtamiExpenses]);
 
+  const pendingJanmashtamiAmount = useMemo(() => {
+    return janmashtamiExpenses.filter(e => e.status === 'PENDING').reduce((sum, e) => sum + Number(e.amount), 0);
+  }, [janmashtamiExpenses]);
+
   const rejectedJanmashtamiAmount = useMemo(() => {
     return janmashtamiExpenses.filter(e => e.status === 'REJECTED').reduce((sum, e) => sum + Number(e.amount), 0);
   }, [janmashtamiExpenses]);
+
+  const pendingJanmashtamiCount = useMemo(() => {
+    return janmashtamiExpenses.filter(e => e.status === 'PENDING').length;
+  }, [janmashtamiExpenses]);
+
+  const totalCommunityPendingExpenses = useMemo(() => {
+    return allDevoteeSummaries.reduce((sum, s) => sum + (s.pending_expenses || 0), 0);
+  }, [allDevoteeSummaries]);
 
   // Overall totals across community
   const totalPrasadamCost = useMemo(() => {
@@ -544,8 +585,13 @@ export const AdminPage: React.FC = () => {
           </span>
           <div className="text-xl sm:text-2xl font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">
             {formatRupee(totalApprovedExpenses)}
+            {totalCommunityPendingExpenses > 0 && '*'}
           </div>
-          <span className="text-[10px] text-slate-400">Regular Seva Purchases</span>
+          <span className="text-[10px] text-slate-400">
+            {totalCommunityPendingExpenses > 0
+              ? `* Includes ${formatRupee(totalCommunityPendingExpenses)} pending approval`
+              : 'Regular Seva Purchases'}
+          </span>
         </Card>
 
         <Card className="p-4 border border-slate-200 dark:border-slate-800">
@@ -573,19 +619,31 @@ export const AdminPage: React.FC = () => {
       <div className="flex overflow-x-auto p-1 bg-slate-100 dark:bg-slate-800/80 rounded-2xl gap-1">
         {[
           { id: 'matrix', label: 'Global Matrix', icon: Users, badge: devotees.length },
-          { id: 'regular-expenses', label: 'Regular Expenses', icon: Receipt, badge: regularExpenses.length },
-          { id: 'janmashtami-expenses', label: 'Janmashtami Expenses', icon: Sparkles, badge: janmashtamiExpenses.length },
+          {
+            id: 'expenses',
+            label: 'Expenses',
+            icon: Receipt,
+            badge: regularExpenses.length + janmashtamiExpenses.length,
+            pendingBadge: pendingRegularCount + pendingJanmashtamiCount,
+          },
           { id: 'settlement', label: 'Settlements', icon: IndianRupee, badge: pendingSettlementSummaries.length },
           { id: 'whatsapp', label: 'WhatsApp Reminders', icon: Send, badge: allDevoteeSummaries.filter(s => s.unfilled_days > 0).length },
           { id: 'devotees', label: 'Devotee Roster', icon: Edit },
           { id: 'settings', label: 'Settings & DB', icon: Settings },
         ].map(tab => {
           const Icon = tab.icon;
-          const isActive = activeAdminTab === tab.id;
+          const isActive =
+            activeAdminTab === tab.id ||
+            (tab.id === 'expenses' && (activeAdminTab === 'regular-expenses' || activeAdminTab === 'janmashtami-expenses'));
           return (
             <button
               key={tab.id}
-              onClick={() => setActiveAdminTab(tab.id as AdminTab)}
+              onClick={() => {
+                setActiveAdminTab(tab.id as AdminTab);
+                if (tab.id === 'expenses') {
+                  setExpenseSubcategory('REGULAR');
+                }
+              }}
               className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
                 isActive
                   ? 'bg-white dark:bg-slate-700 text-amber-600 dark:text-amber-400 shadow-sm'
@@ -599,19 +657,26 @@ export const AdminPage: React.FC = () => {
                   {tab.badge}
                 </span>
               )}
+              {tab.pendingBadge !== undefined && tab.pendingBadge > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full text-[9px] font-bold bg-amber-500 text-white animate-pulse" title={`${tab.pendingBadge} pending approval`}>
+                  {tab.pendingBadge} pending
+                </span>
+              )}
             </button>
           );
         })}
       </div>
 
       {/* Search Bar for Views */}
-      {(activeAdminTab === 'matrix' || activeAdminTab === 'whatsapp' || activeAdminTab === 'devotees' || activeAdminTab === 'regular-expenses' || activeAdminTab === 'janmashtami-expenses') && (
+      {(activeAdminTab === 'matrix' || activeAdminTab === 'whatsapp' || activeAdminTab === 'devotees' || activeAdminTab === 'expenses' || activeAdminTab === 'regular-expenses' || activeAdminTab === 'janmashtami-expenses') && (
         <div className="relative">
           <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
             type="text"
             placeholder={
-              activeAdminTab === 'regular-expenses'
+              activeAdminTab === 'expenses'
+                ? `Search ${expenseSubcategory === 'REGULAR' ? 'regular' : 'Janmashtami'} expenses by title, payer, or notes...`
+                : activeAdminTab === 'regular-expenses'
                 ? "Search regular expenses by title, payer, or notes..."
                 : activeAdminTab === 'janmashtami-expenses'
                 ? "Search Janmashtami expenses by title, payer, or notes..."
@@ -718,6 +783,7 @@ export const AdminPage: React.FC = () => {
                         </td>
                         <td className="py-3 px-3 text-right font-bold text-emerald-600 dark:text-emerald-400">
                           {formatRupee(s.approved_expenses)}
+                          {s.has_pending_expenses && '*'}
                         </td>
                         <td className="py-3 px-3 text-right font-mono">
                           <button
@@ -783,338 +849,537 @@ export const AdminPage: React.FC = () => {
                 </tbody>
               </table>
             </div>
+
+            {/* Footnote for assumed approved pending expenses */}
+            {allDevoteeSummaries.some(s => s.has_pending_expenses) && (
+              <div className="p-3 bg-amber-500/10 border-t border-amber-500/20 text-xs text-amber-800 dark:text-amber-200 flex items-center gap-1.5">
+                <Info className="w-3.5 h-3.5 flex-shrink-0 text-amber-600 dark:text-amber-400" />
+                <span>
+                  * Note: Amounts with an asterisk include pending expenses assumed as approved, subject to Admin verification.
+                </span>
+              </div>
+            )}
           </Card>
         </div>
       )}
 
-      {/* TAB 2: REGULAR EXPENSES REVIEW */}
-      {activeAdminTab === 'regular-expenses' && (
+      {/* TAB 2: UNIFIED EXPENSES CATEGORY (WITH REGULAR & JANMASHTAMI SUBCATEGORIES) */}
+      {(activeAdminTab === 'expenses' || activeAdminTab === 'regular-expenses' || activeAdminTab === 'janmashtami-expenses') && (
         <div className="space-y-4">
-          {/* Summary Mini-Cards for Regular Expenses */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <Card className="p-3.5 border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Regular Seva</span>
-              <div className="text-lg font-black text-slate-900 dark:text-white mt-0.5 font-mono">
-                {formatRupee(totalRegularAmount)}
-              </div>
-              <span className="text-[10px] text-slate-500">{regularExpenses.length} total bills submitted</span>
-            </Card>
-
-            <Card className="p-3.5 border border-slate-200 dark:border-slate-800 bg-emerald-50/50 dark:bg-emerald-950/20">
-              <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">Approved Offsets</span>
-              <div className="text-lg font-black text-emerald-600 dark:text-emerald-400 mt-0.5 font-mono">
-                {formatRupee(approvedRegularAmount)}
-              </div>
-              <span className="text-[10px] text-slate-500">Offsets monthly devotee bills</span>
-            </Card>
-
-            <Card className="p-3.5 border border-slate-200 dark:border-slate-800 bg-rose-50/50 dark:bg-rose-950/20">
-              <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400 uppercase tracking-wider">Rejected</span>
-              <div className="text-lg font-black text-rose-600 dark:text-rose-400 mt-0.5 font-mono">
-                {formatRupee(rejectedRegularAmount)}
-              </div>
-              <span className="text-[10px] text-slate-500">{regularExpenses.filter(e => e.status === 'REJECTED').length} rejected purchases</span>
-            </Card>
-          </div>
-
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+          {/* Subcategory Toggle & Context Month Notice */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm">
             <div>
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <Receipt className="w-4 h-4 text-amber-500" />
-                <span>Regular Expenses Review ({filteredRegularExpenses.length})</span>
-              </h3>
-              <p className="text-xs text-slate-400">
-                Monthly groceries, vegetables, and cooking items offsetting prasadam bills.
-              </p>
+              <div className="flex items-center gap-2">
+                <Receipt className="w-5 h-5 text-amber-500" />
+                <h2 className="text-base sm:text-lg font-extrabold text-slate-900 dark:text-white">
+                  Expenses Management
+                </h2>
+              </div>
+              <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 mt-1">
+                <Calendar className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
+                <span>
+                  {expenseSubcategory === 'REGULAR' ? (
+                    <>Showing regular expenses for <strong className="text-slate-700 dark:text-slate-300 font-bold">{formatMonthName(activeMonth)}</strong> (filtered by Date of Expense).</>
+                  ) : (
+                    <>Showing <strong className="text-slate-700 dark:text-slate-300 font-bold">All-Time</strong> Sri Krishna Janmashtami expenses (cumulative festival ledger across all dates, not categorized by month).</>
+                  )}
+                </span>
+              </div>
             </div>
 
-            {/* Filter Pills */}
-            <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl">
-              {(['ALL', 'APPROVED', 'REJECTED'] as const).map(status => (
-                <button
-                  key={status}
-                  type="button"
-                  onClick={() => setRegularStatusFilter(status)}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
-                    regularStatusFilter === status
-                      ? 'bg-white dark:bg-slate-700 text-amber-600 dark:text-amber-400 shadow-xs'
-                      : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-                  }`}
-                >
-                  {status}
-                </button>
-              ))}
+            {/* Subcategory Tabs: Regular vs Janmashtami */}
+            <div className="flex items-center p-1 bg-slate-100 dark:bg-slate-800 rounded-xl gap-1">
+              <button
+                type="button"
+                onClick={() => setExpenseSubcategory('REGULAR')}
+                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                  expenseSubcategory === 'REGULAR'
+                    ? 'bg-white dark:bg-slate-700 text-amber-600 dark:text-amber-400 shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                }`}
+              >
+                <Receipt className="w-3.5 h-3.5" />
+                <span>Regular Expenses</span>
+                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
+                  expenseSubcategory === 'REGULAR'
+                    ? 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300'
+                    : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
+                }`}>
+                  {regularExpenses.length}
+                </span>
+                {pendingRegularCount > 0 && (
+                  <span className="px-1.5 py-0.2 rounded-full text-[9px] font-bold bg-amber-500 text-white animate-pulse">
+                    {pendingRegularCount} pending
+                  </span>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setExpenseSubcategory('JANMASHTAMI')}
+                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                  expenseSubcategory === 'JANMASHTAMI'
+                    ? 'bg-white dark:bg-slate-700 text-amber-600 dark:text-amber-400 shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                }`}
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Janmashtami Expenses</span>
+                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
+                  expenseSubcategory === 'JANMASHTAMI'
+                    ? 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300'
+                    : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
+                }`}>
+                  {janmashtamiExpenses.length}
+                </span>
+                {pendingJanmashtamiCount > 0 && (
+                  <span className="px-1.5 py-0.2 rounded-full text-[9px] font-bold bg-amber-500 text-white animate-pulse">
+                    {pendingJanmashtamiCount} pending
+                  </span>
+                )}
+              </button>
             </div>
           </div>
 
-          <Card className="overflow-hidden border border-slate-200 dark:border-slate-800 shadow-sm">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead className="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold border-b">
-                  <tr>
-                    <th className="py-3 px-3">Date</th>
-                    <th className="py-3 px-3">Item / Description</th>
-                    <th className="py-3 px-3">Payer / Devotee</th>
-                    <th className="py-3 px-3 text-right">Amount</th>
-                    <th className="py-3 px-3 text-center">Receipt</th>
-                    <th className="py-3 px-3 text-center">Status</th>
-                    <th className="py-3 px-3 text-center">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium">
-                  {filteredRegularExpenses.length === 0 ? (
-                    <tr>
-                      <td colSpan={7} className="py-8 text-center text-slate-400">
-                        No regular expenses found matching current filter.
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredRegularExpenses.map(exp => {
-                      const devotee = devotees.find(d => d.id === exp.devotee_id);
-                      return (
-                        <tr key={exp.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
-                          <td className="py-3 px-3 text-slate-500 font-mono">
-                            {exp.date || exp.created_at.slice(0, 10)}
-                          </td>
-                          <td className="py-3 px-3">
-                            <div className="font-bold text-slate-900 dark:text-white">
-                              {exp.title}
-                            </div>
-                            {exp.comments && (
-                              <div className="text-[10px] text-slate-400">{exp.comments}</div>
-                            )}
-                            {exp.rejection_reason && (
-                              <div className="text-[10px] text-rose-500 font-semibold">
-                                Reason: {exp.rejection_reason}
-                              </div>
-                            )}
-                          </td>
-                          <td className="py-3 px-3">
-                            <div className="font-bold text-slate-800 dark:text-slate-200">
-                              {exp.payer_name}
-                            </div>
-                            <div className="text-[10px] text-slate-400">
-                              {devotee ? formatDevoteeName(devotee) : (exp.guest_name ? `Guest: ${exp.guest_name}` : '-')}
-                            </div>
-                          </td>
-                          <td className="py-3 px-3 text-right font-bold text-slate-900 dark:text-white font-mono">
-                            {formatRupee(exp.amount)}
-                          </td>
-                          <td className="py-3 px-3 text-center">
-                            {exp.bill_url ? (
-                              <a
-                                href={exp.bill_url}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="text-amber-600 dark:text-amber-400 hover:underline font-bold inline-flex items-center gap-1"
-                              >
-                                <Eye className="w-3.5 h-3.5" />
-                                <span>View</span>
-                              </a>
-                            ) : (
-                              <span className="text-slate-400">-</span>
-                            )}
-                          </td>
-                          <td className="py-3 px-3 text-center">
-                            <Badge variant={exp.status === 'APPROVED' ? 'success' : 'danger'} size="sm">
-                              {exp.status}
-                            </Badge>
-                          </td>
-                          <td className="py-3 px-3 text-center">
-                            {exp.status === 'APPROVED' ? (
-                              <Button
-                                onClick={() => setRejectingExpense(exp)}
-                                variant="danger"
-                                size="sm"
-                                className="text-[10px] py-1 px-2.5"
-                              >
-                                Reject
-                              </Button>
-                            ) : (
-                              <Button
-                                onClick={() => reviewExpense(exp.id, 'APPROVED')}
-                                variant="secondary"
-                                size="sm"
-                                className="text-[10px] py-1 px-2.5 text-emerald-600 hover:bg-emerald-50"
-                              >
-                                Re-Approve
-                              </Button>
-                            )}
+          {/* SUBCATEGORY 1: REGULAR EXPENSES */}
+          {expenseSubcategory === 'REGULAR' && (
+            <div className="space-y-4">
+              {/* Summary Mini-Cards for Regular Expenses */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <Card className="p-3.5 border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Regular Seva</span>
+                  <div className="text-lg font-black text-slate-900 dark:text-white mt-0.5 font-mono">
+                    {formatRupee(totalRegularAmount)}
+                  </div>
+                  <span className="text-[10px] text-slate-500">{regularExpenses.length} total bills</span>
+                </Card>
+
+                <Card className="p-3.5 border border-slate-200 dark:border-slate-800 bg-emerald-50/50 dark:bg-emerald-950/20">
+                  <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">Approved Offsets</span>
+                  <div className="text-lg font-black text-emerald-600 dark:text-emerald-400 mt-0.5 font-mono">
+                    {formatRupee(approvedRegularAmount)}
+                  </div>
+                  <span className="text-[10px] text-slate-500">Offsets prasadam bills</span>
+                </Card>
+
+                <Card className="p-3.5 border border-slate-200 dark:border-slate-800 bg-amber-50/50 dark:bg-amber-950/20">
+                  <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider">Pending Verification</span>
+                  <div className="text-lg font-black text-amber-600 dark:text-amber-400 mt-0.5 font-mono">
+                    {formatRupee(pendingRegularAmount)}
+                  </div>
+                  <span className="text-[10px] text-slate-500">{pendingRegularCount} awaiting approval</span>
+                </Card>
+
+                <Card className="p-3.5 border border-slate-200 dark:border-slate-800 bg-rose-50/50 dark:bg-rose-950/20">
+                  <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400 uppercase tracking-wider">Rejected</span>
+                  <div className="text-lg font-black text-rose-600 dark:text-rose-400 mt-0.5 font-mono">
+                    {formatRupee(rejectedRegularAmount)}
+                  </div>
+                  <span className="text-[10px] text-slate-500">{regularExpenses.filter(e => e.status === 'REJECTED').length} rejected</span>
+                </Card>
+              </div>
+
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                    <Receipt className="w-4 h-4 text-amber-500" />
+                    <span>Regular Expenses Review ({filteredRegularExpenses.length})</span>
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Monthly groceries, vegetables, and cooking items offsetting prasadam bills.
+                  </p>
+                </div>
+
+                {/* Filter Pills */}
+                <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl">
+                  {(['ALL', 'PENDING', 'APPROVED', 'REJECTED'] as const).map(status => (
+                    <button
+                      key={status}
+                      type="button"
+                      onClick={() => setRegularStatusFilter(status)}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                        regularStatusFilter === status
+                          ? 'bg-white dark:bg-slate-700 text-amber-600 dark:text-amber-400 shadow-xs'
+                          : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                      }`}
+                    >
+                      {status}
+                      {status === 'PENDING' && pendingRegularCount > 0 && (
+                        <span className="ml-1 px-1 py-0.2 rounded-full text-[9px] bg-amber-500 text-white">
+                          {pendingRegularCount}
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <Card className="overflow-hidden border border-slate-200 dark:border-slate-800 shadow-sm">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead className="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold border-b">
+                      <tr>
+                        <th className="py-3 px-3">Expense Date</th>
+                        <th className="py-3 px-3">Submitted At</th>
+                        <th className="py-3 px-3">Item / Description</th>
+                        <th className="py-3 px-3">Payer / Devotee</th>
+                        <th className="py-3 px-3 text-right">Amount</th>
+                        <th className="py-3 px-3 text-center">Receipt</th>
+                        <th className="py-3 px-3 text-center">Status</th>
+                        <th className="py-3 px-3 text-center">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium">
+                      {filteredRegularExpenses.length === 0 ? (
+                        <tr>
+                          <td colSpan={8} className="py-8 text-center text-slate-400">
+                            No regular expenses found matching current filter for {formatMonthName(activeMonth)}.
                           </td>
                         </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
+                      ) : (
+                        filteredRegularExpenses.map(exp => {
+                          const devotee = devotees.find(d => d.id === exp.devotee_id);
+                          return (
+                            <tr key={exp.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                              <td className="py-3 px-3 text-slate-700 dark:text-slate-300 font-mono font-medium">
+                                {formatExpenseDate(exp.date || exp.created_at)}
+                              </td>
+                              <td className="py-3 px-3 text-slate-500 dark:text-slate-400 font-mono text-[11px]">
+                                {formatSubmissionDateTime(exp.created_at)}
+                              </td>
+                              <td className="py-3 px-3">
+                                <div className="font-bold text-slate-900 dark:text-white">
+                                  {exp.title}
+                                </div>
+                                {exp.comments && (
+                                  <div className="text-[10px] text-slate-400">{exp.comments}</div>
+                                )}
+                                {exp.rejection_reason && (
+                                  <div className="text-[10px] text-rose-500 font-semibold">
+                                    Reason: {exp.rejection_reason}
+                                  </div>
+                                )}
+                              </td>
+                              <td className="py-3 px-3">
+                                <div className="font-bold text-slate-800 dark:text-slate-200">
+                                  {exp.payer_name}
+                                </div>
+                                <div className="text-[10px] text-slate-400">
+                                  {devotee ? formatDevoteeName(devotee) : (exp.guest_name ? `Guest: ${exp.guest_name}` : '-')}
+                                </div>
+                              </td>
+                              <td className="py-3 px-3 text-right font-bold text-slate-900 dark:text-white font-mono">
+                                {formatRupee(exp.amount)}
+                              </td>
+                              <td className="py-3 px-3 text-center">
+                                {exp.bill_url ? (
+                                  <a
+                                    href={exp.bill_url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="text-amber-600 dark:text-amber-400 hover:underline font-bold inline-flex items-center gap-1"
+                                  >
+                                    <Eye className="w-3.5 h-3.5" />
+                                    <span>View</span>
+                                  </a>
+                                ) : (
+                                  <span className="text-slate-400">-</span>
+                                )}
+                              </td>
+                              <td className="py-3 px-3 text-center">
+                                <Badge
+                                  variant={exp.status === 'APPROVED' ? 'success' : exp.status === 'PENDING' ? 'warning' : 'danger'}
+                                  size="sm"
+                                >
+                                  {exp.status === 'PENDING' ? 'Pending' : exp.status}
+                                </Badge>
+                              </td>
+                              <td className="py-3 px-3 text-center">
+                                {exp.status === 'PENDING' ? (
+                                  <div className="flex items-center justify-center gap-1.5">
+                                    <Button
+                                      onClick={() => reviewExpense(exp.id, 'APPROVED')}
+                                      variant="secondary"
+                                      size="sm"
+                                      className="text-[10px] py-1 px-2.5 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 font-bold"
+                                      title="Approve expense"
+                                    >
+                                      <Check className="w-3 h-3 mr-1 text-emerald-600" />
+                                      <span>Approve</span>
+                                    </Button>
+                                    <Button
+                                      onClick={() => setRejectingExpense(exp)}
+                                      variant="danger"
+                                      size="sm"
+                                      className="text-[10px] py-1 px-2.5 font-bold"
+                                      title="Reject expense"
+                                    >
+                                      <X className="w-3 h-3 mr-1" />
+                                      <span>Reject</span>
+                                    </Button>
+                                  </div>
+                                ) : exp.status === 'APPROVED' ? (
+                                  <Button
+                                    onClick={() => setRejectingExpense(exp)}
+                                    variant="danger"
+                                    size="sm"
+                                    className="text-[10px] py-1 px-2.5 font-bold"
+                                    title="Reject expense"
+                                  >
+                                    <span>Reject</span>
+                                  </Button>
+                                ) : (
+                                  <Button
+                                    onClick={() => reviewExpense(exp.id, 'APPROVED')}
+                                    variant="secondary"
+                                    size="sm"
+                                    className="text-[10px] py-1 px-2.5 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 font-bold"
+                                    title="Re-approve expense"
+                                  >
+                                    <Check className="w-3 h-3 mr-1 text-emerald-600" />
+                                    <span>Re-Approve</span>
+                                  </Button>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                {pendingRegularCount > 0 && (
+                  <div className="p-3 bg-amber-500/10 border-t border-amber-500/20 text-xs text-amber-800 dark:text-amber-200 flex items-center gap-1.5">
+                    <Info className="w-3.5 h-3.5 flex-shrink-0 text-amber-600 dark:text-amber-400" />
+                    <span>
+                      * Note: {pendingRegularCount} pending expense(s) totaling {formatRupee(pendingRegularAmount)} are assumed as approved in calculations until reviewed by Admin.
+                    </span>
+                  </div>
+                )}
+              </Card>
             </div>
-          </Card>
-        </div>
-      )}
+          )}
 
-      {/* TAB 2B: JANMASHTAMI EXPENSES REVIEW */}
-      {activeAdminTab === 'janmashtami-expenses' && (
-        <div className="space-y-4">
-          {/* Summary Mini-Cards for Janmashtami */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <Card className="p-3.5 border border-amber-200/80 dark:border-amber-800/60 bg-amber-500/5">
-              <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider">Total Janmashtami Seva</span>
-              <div className="text-lg font-black text-slate-900 dark:text-white mt-0.5 font-mono">
-                {formatRupee(totalJanmashtamiAmount)}
+          {/* SUBCATEGORY 2: JANMASHTAMI EXPENSES */}
+          {expenseSubcategory === 'JANMASHTAMI' && (
+            <div className="space-y-4">
+              {/* Summary Mini-Cards for Janmashtami */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <Card className="p-3.5 border border-amber-200/80 dark:border-amber-800/60 bg-amber-500/5">
+                  <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider">Total Festival Seva</span>
+                  <div className="text-lg font-black text-slate-900 dark:text-white mt-0.5 font-mono">
+                    {formatRupee(totalJanmashtamiAmount)}
+                  </div>
+                  <span className="text-[10px] text-slate-500">{janmashtamiExpenses.length} festival items</span>
+                </Card>
+
+                <Card className="p-3.5 border border-slate-200 dark:border-slate-800 bg-emerald-50/50 dark:bg-emerald-950/20">
+                  <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">Approved Festival Seva</span>
+                  <div className="text-lg font-black text-emerald-600 dark:text-emerald-400 mt-0.5 font-mono">
+                    {formatRupee(approvedJanmashtamiAmount)}
+                  </div>
+                  <span className="text-[10px] text-slate-500">Decor, flowers & deity seva</span>
+                </Card>
+
+                <Card className="p-3.5 border border-slate-200 dark:border-slate-800 bg-amber-50/50 dark:bg-amber-950/20">
+                  <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider">Pending Verification</span>
+                  <div className="text-lg font-black text-amber-600 dark:text-amber-400 mt-0.5 font-mono">
+                    {formatRupee(pendingJanmashtamiAmount)}
+                  </div>
+                  <span className="text-[10px] text-slate-500">{pendingJanmashtamiCount} awaiting approval</span>
+                </Card>
+
+                <Card className="p-3.5 border border-slate-200 dark:border-slate-800 bg-rose-50/50 dark:bg-rose-950/20">
+                  <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400 uppercase tracking-wider">Rejected</span>
+                  <div className="text-lg font-black text-rose-600 dark:text-rose-400 mt-0.5 font-mono">
+                    {formatRupee(rejectedJanmashtamiAmount)}
+                  </div>
+                  <span className="text-[10px] text-slate-500">{janmashtamiExpenses.filter(e => e.status === 'REJECTED').length} rejected</span>
+                </Card>
               </div>
-              <span className="text-[10px] text-slate-500">{janmashtamiExpenses.length} festival expenses</span>
-            </Card>
 
-            <Card className="p-3.5 border border-slate-200 dark:border-slate-800 bg-emerald-50/50 dark:bg-emerald-950/20">
-              <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">Approved Festival Seva</span>
-              <div className="text-lg font-black text-emerald-600 dark:text-emerald-400 mt-0.5 font-mono">
-                {formatRupee(approvedJanmashtamiAmount)}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-amber-500" />
+                    <span>Sri Krishna Janmashtami Festival Expenses ({filteredJanmashtamiExpenses.length})</span>
+                    <Badge variant="saffron" size="sm" className="text-[10px]">All Time</Badge>
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    All-time Janmashtami festival purchases and sponsorships (isolated account, cumulative across all dates).
+                  </p>
+                </div>
+
+                {/* Filter Pills */}
+                <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl">
+                  {(['ALL', 'PENDING', 'APPROVED', 'REJECTED'] as const).map(status => (
+                    <button
+                      key={status}
+                      type="button"
+                      onClick={() => setJanmashtamiStatusFilter(status)}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                        janmashtamiStatusFilter === status
+                          ? 'bg-white dark:bg-slate-700 text-amber-600 dark:text-amber-400 shadow-xs'
+                          : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                      }`}
+                    >
+                      {status}
+                      {status === 'PENDING' && pendingJanmashtamiCount > 0 && (
+                        <span className="ml-1 px-1 py-0.2 rounded-full text-[9px] bg-amber-500 text-white">
+                          {pendingJanmashtamiCount}
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </div>
               </div>
-              <span className="text-[10px] text-slate-500">Decor, flowers, deity seva & bhoga</span>
-            </Card>
 
-            <Card className="p-3.5 border border-slate-200 dark:border-slate-800 bg-rose-50/50 dark:bg-rose-950/20">
-              <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400 uppercase tracking-wider">Rejected</span>
-              <div className="text-lg font-black text-rose-600 dark:text-rose-400 mt-0.5 font-mono">
-                {formatRupee(rejectedJanmashtamiAmount)}
-              </div>
-              <span className="text-[10px] text-slate-500">{janmashtamiExpenses.filter(e => e.status === 'REJECTED').length} rejected items</span>
-            </Card>
-          </div>
-
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-            <div>
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-amber-500" />
-                <span>Sri Krishna Janmashtami Festival Expenses ({filteredJanmashtamiExpenses.length})</span>
-              </h3>
-              <p className="text-xs text-slate-400">
-                Special Janmashtami festival purchases and sponsorships (kept separate from monthly prasadam).
-              </p>
-            </div>
-
-            {/* Filter Pills */}
-            <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl">
-              {(['ALL', 'APPROVED', 'REJECTED'] as const).map(status => (
-                <button
-                  key={status}
-                  type="button"
-                  onClick={() => setJanmashtamiStatusFilter(status)}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
-                    janmashtamiStatusFilter === status
-                      ? 'bg-white dark:bg-slate-700 text-amber-600 dark:text-amber-400 shadow-xs'
-                      : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-                  }`}
-                >
-                  {status}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <Card className="overflow-hidden border border-slate-200 dark:border-slate-800 shadow-sm">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead className="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold border-b">
-                  <tr>
-                    <th className="py-3 px-3">Date</th>
-                    <th className="py-3 px-3">Item / Description</th>
-                    <th className="py-3 px-3">Payer / Devotee</th>
-                    <th className="py-3 px-3 text-right">Amount</th>
-                    <th className="py-3 px-3 text-center">Receipt</th>
-                    <th className="py-3 px-3 text-center">Status</th>
-                    <th className="py-3 px-3 text-center">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium">
-                  {filteredJanmashtamiExpenses.length === 0 ? (
-                    <tr>
-                      <td colSpan={7} className="py-8 text-center text-slate-400">
-                        No Janmashtami festival expenses found matching current filter.
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredJanmashtamiExpenses.map(exp => {
-                      const devotee = devotees.find(d => d.id === exp.devotee_id);
-                      return (
-                        <tr key={exp.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
-                          <td className="py-3 px-3 text-slate-500 font-mono">
-                            {exp.date || exp.created_at.slice(0, 10)}
-                          </td>
-                          <td className="py-3 px-3">
-                            <div className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-                              <span>{exp.title}</span>
-                              <Badge variant="saffron" size="sm" className="text-[9px] px-1 py-0">Janmashtami</Badge>
-                            </div>
-                            {exp.comments && (
-                              <div className="text-[10px] text-slate-400">{exp.comments}</div>
-                            )}
-                            {exp.rejection_reason && (
-                              <div className="text-[10px] text-rose-500 font-semibold">
-                                Reason: {exp.rejection_reason}
-                              </div>
-                            )}
-                          </td>
-                          <td className="py-3 px-3">
-                            <div className="font-bold text-slate-800 dark:text-slate-200">
-                              {exp.payer_name}
-                            </div>
-                            <div className="text-[10px] text-slate-400">
-                              {devotee ? formatDevoteeName(devotee) : (exp.guest_name ? `Guest: ${exp.guest_name}` : '-')}
-                            </div>
-                          </td>
-                          <td className="py-3 px-3 text-right font-bold text-slate-900 dark:text-white font-mono">
-                            {formatRupee(exp.amount)}
-                          </td>
-                          <td className="py-3 px-3 text-center">
-                            {exp.bill_url ? (
-                              <a
-                                href={exp.bill_url}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="text-amber-600 dark:text-amber-400 hover:underline font-bold inline-flex items-center gap-1"
-                              >
-                                <Eye className="w-3.5 h-3.5" />
-                                <span>View</span>
-                              </a>
-                            ) : (
-                              <span className="text-slate-400">-</span>
-                            )}
-                          </td>
-                          <td className="py-3 px-3 text-center">
-                            <Badge variant={exp.status === 'APPROVED' ? 'success' : 'danger'} size="sm">
-                              {exp.status}
-                            </Badge>
-                          </td>
-                          <td className="py-3 px-3 text-center">
-                            {exp.status === 'APPROVED' ? (
-                              <Button
-                                onClick={() => setRejectingExpense(exp)}
-                                variant="danger"
-                                size="sm"
-                                className="text-[10px] py-1 px-2.5"
-                              >
-                                Reject
-                              </Button>
-                            ) : (
-                              <Button
-                                onClick={() => reviewExpense(exp.id, 'APPROVED')}
-                                variant="secondary"
-                                size="sm"
-                                className="text-[10px] py-1 px-2.5 text-emerald-600 hover:bg-emerald-50"
-                              >
-                                Re-Approve
-                              </Button>
-                            )}
+              <Card className="overflow-hidden border border-slate-200 dark:border-slate-800 shadow-sm">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead className="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold border-b">
+                      <tr>
+                        <th className="py-3 px-3">Expense Date</th>
+                        <th className="py-3 px-3">Submitted At</th>
+                        <th className="py-3 px-3">Item / Description</th>
+                        <th className="py-3 px-3">Payer / Devotee</th>
+                        <th className="py-3 px-3 text-right">Amount</th>
+                        <th className="py-3 px-3 text-center">Receipt</th>
+                        <th className="py-3 px-3 text-center">Status</th>
+                        <th className="py-3 px-3 text-center">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium">
+                      {filteredJanmashtamiExpenses.length === 0 ? (
+                        <tr>
+                          <td colSpan={8} className="py-8 text-center text-slate-400">
+                            No Janmashtami festival expenses found matching current filter (All Time).
                           </td>
                         </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
+                      ) : (
+                        filteredJanmashtamiExpenses.map(exp => {
+                          const devotee = devotees.find(d => d.id === exp.devotee_id);
+                          return (
+                            <tr key={exp.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                              <td className="py-3 px-3 text-slate-700 dark:text-slate-300 font-mono font-medium">
+                                {formatExpenseDate(exp.date || exp.created_at)}
+                              </td>
+                              <td className="py-3 px-3 text-slate-500 dark:text-slate-400 font-mono text-[11px]">
+                                {formatSubmissionDateTime(exp.created_at)}
+                              </td>
+                              <td className="py-3 px-3">
+                                <div className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                                  <span>{exp.title}</span>
+                                  <Badge variant="saffron" size="sm" className="text-[9px] px-1 py-0">Janmashtami</Badge>
+                                </div>
+                                {exp.comments && (
+                                  <div className="text-[10px] text-slate-400">{exp.comments}</div>
+                                )}
+                                {exp.rejection_reason && (
+                                  <div className="text-[10px] text-rose-500 font-semibold">
+                                    Reason: {exp.rejection_reason}
+                                  </div>
+                                )}
+                              </td>
+                              <td className="py-3 px-3">
+                                <div className="font-bold text-slate-800 dark:text-slate-200">
+                                  {exp.payer_name}
+                                </div>
+                                <div className="text-[10px] text-slate-400">
+                                  {devotee ? formatDevoteeName(devotee) : (exp.guest_name ? `Guest: ${exp.guest_name}` : '-')}
+                                </div>
+                              </td>
+                              <td className="py-3 px-3 text-right font-bold text-slate-900 dark:text-white font-mono">
+                                {formatRupee(exp.amount)}
+                              </td>
+                              <td className="py-3 px-3 text-center">
+                                {exp.bill_url ? (
+                                  <a
+                                    href={exp.bill_url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="text-amber-600 dark:text-amber-400 hover:underline font-bold inline-flex items-center gap-1"
+                                  >
+                                    <Eye className="w-3.5 h-3.5" />
+                                    <span>View</span>
+                                  </a>
+                                ) : (
+                                  <span className="text-slate-400">-</span>
+                                )}
+                              </td>
+                              <td className="py-3 px-3 text-center">
+                                <Badge
+                                  variant={exp.status === 'APPROVED' ? 'success' : exp.status === 'PENDING' ? 'warning' : 'danger'}
+                                  size="sm"
+                                >
+                                  {exp.status === 'PENDING' ? 'Pending' : exp.status}
+                                </Badge>
+                              </td>
+                              <td className="py-3 px-3 text-center">
+                                {exp.status === 'PENDING' ? (
+                                  <div className="flex items-center justify-center gap-1.5">
+                                    <Button
+                                      onClick={() => reviewExpense(exp.id, 'APPROVED')}
+                                      variant="secondary"
+                                      size="sm"
+                                      className="text-[10px] py-1 px-2.5 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 font-bold"
+                                      title="Approve expense"
+                                    >
+                                      <Check className="w-3 h-3 mr-1 text-emerald-600" />
+                                      <span>Approve</span>
+                                    </Button>
+                                    <Button
+                                      onClick={() => setRejectingExpense(exp)}
+                                      variant="danger"
+                                      size="sm"
+                                      className="text-[10px] py-1 px-2.5 font-bold"
+                                      title="Reject expense"
+                                    >
+                                      <X className="w-3 h-3 mr-1" />
+                                      <span>Reject</span>
+                                    </Button>
+                                  </div>
+                                ) : exp.status === 'APPROVED' ? (
+                                  <Button
+                                    onClick={() => setRejectingExpense(exp)}
+                                    variant="danger"
+                                    size="sm"
+                                    className="text-[10px] py-1 px-2.5 font-bold"
+                                    title="Reject expense"
+                                  >
+                                    <span>Reject</span>
+                                  </Button>
+                                ) : (
+                                  <Button
+                                    onClick={() => reviewExpense(exp.id, 'APPROVED')}
+                                    variant="secondary"
+                                    size="sm"
+                                    className="text-[10px] py-1 px-2.5 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 font-bold"
+                                    title="Re-approve expense"
+                                  >
+                                    <Check className="w-3 h-3 mr-1 text-emerald-600" />
+                                    <span>Re-Approve</span>
+                                  </Button>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                {pendingJanmashtamiCount > 0 && (
+                  <div className="p-3 bg-amber-500/10 border-t border-amber-500/20 text-xs text-amber-800 dark:text-amber-200 flex items-center gap-1.5">
+                    <Info className="w-3.5 h-3.5 flex-shrink-0 text-amber-600 dark:text-amber-400" />
+                    <span>
+                      * Note: {pendingJanmashtamiCount} pending Janmashtami expense(s) totaling {formatRupee(pendingJanmashtamiAmount)} are awaiting Admin verification.
+                    </span>
+                  </div>
+                )}
+              </Card>
             </div>
-          </Card>
+          )}
         </div>
       )}
 

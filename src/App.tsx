@@ -9,10 +9,22 @@ import { AdminPage } from './pages/AdminPage';
 import { LoginPage } from './pages/LoginPage';
 import { LoginModal } from './components/auth/LoginModal';
 import { AdminPinModal } from './components/auth/AdminPinModal';
+import { NotificationModal } from './components/notifications/NotificationModal';
 import { ToastContainer } from './components/common/Toast';
 
 export const App: React.FC = () => {
-  const { activeTab, activeDevotee, guestName, isAdmin } = useApp();
+  const {
+    activeTab,
+    activeDevotee,
+    guestName,
+    isAdmin,
+    isNotificationModalOpen,
+    setIsNotificationModalOpen,
+    userExpenses,
+    readNotificationIds,
+    markAllNotificationsAsRead,
+    markNotificationAsRead,
+  } = useApp();
 
   // If not logged in and not authenticated as admin, show dedicated Login Page
   const isAuthenticated = Boolean(activeDevotee || guestName || (activeTab === 'admin' && isAdmin));
@@ -46,6 +58,14 @@ export const App: React.FC = () => {
       {/* Modals & Portals */}
       <LoginModal />
       <AdminPinModal />
+      <NotificationModal
+        isOpen={isNotificationModalOpen}
+        onClose={() => setIsNotificationModalOpen(false)}
+        expenses={userExpenses}
+        readNotificationIds={readNotificationIds}
+        onMarkAllAsRead={markAllNotificationsAsRead}
+        onMarkAsRead={markNotificationAsRead}
+      />
       <ToastContainer />
     </div>
   );

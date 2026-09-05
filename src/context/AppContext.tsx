@@ -3,6 +3,7 @@ import {
   Devotee,
   PrasadamCount,
   Expense,
+  ExpenseStatus,
   MonthlyLedger,
   DevoteeMonthlySummary,
   ActiveTab,
@@ -47,6 +48,15 @@ interface AppContextType {
   showToast: (toast: Omit<ToastInfo, 'id'>) => void;
   removeToast: (id: string) => void;
 
+  // Notifications
+  isNotificationModalOpen: boolean;
+  setIsNotificationModalOpen: (open: boolean) => void;
+  userExpenses: Expense[];
+  unreadNotificationCount: number;
+  readNotificationIds: string[];
+  markNotificationAsRead: (id: string) => void;
+  markAllNotificationsAsRead: () => void;
+
   // Summaries
   communityCostPerMember: number;
   currentDevoteeSummary: DevoteeMonthlySummary | null;
@@ -82,7 +92,7 @@ interface AppContextType {
   ) => Promise<void>;
   autoFillCounts: (targetDevoteeId?: string) => Promise<number>;
   submitExpense: (expense: Omit<Expense, 'id' | 'created_at'>) => Promise<Expense>;
-  reviewExpense: (id: string, status: 'APPROVED' | 'REJECTED', reason?: string) => Promise<void>;
+  reviewExpense: (id: string, status: ExpenseStatus, reason?: string) => Promise<void>;
   requestSettlement: (amount: number, date: string, notes?: string) => Promise<void>;
   adminVerifySettlement: (devoteeId: string, amount: number, date: string, notes?: string) => Promise<void>;
   adminResetSettlement: (devoteeId: string) => Promise<void>;
@@ -134,6 +144,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     initialTab === 'admin' && !isInitiallyAdmin
   );
   const [toasts, setToasts] = useState<ToastInfo[]>([]);
+  const [isNotificationModalOpen, setIsNotificationModalOpen] = useState<boolean>(false);
+  const [readNotificationIds, setReadNotificationIds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('gnh_read_notifs');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
 
   // Apply theme class to document element
   useEffect(() => {
@@ -266,6 +285,41 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       communityCostPerMember
     );
   }, [activeDevotee, activeMonth, prasadamCounts, expenses, monthlyLedgers, communityCostPerMember]);
+
+  // User's own expenses (all time) for notifications
+  const userExpenses = useMemo(() => {
+    if (activeDevotee) {
+      return expenses.filter(e => e.devotee_id === activeDevotee.id);
+    }
+    if (guestName) {
+      return expenses.filter(e => e.guest_name === guestName);
+    }
+    return [];
+  }, [expenses, activeDevotee, guestName]);
+
+  const unreadNotificationCount = useMemo(() => {
+    return userExpenses.filter(
+      e => (e.status === 'APPROVED' || e.status === 'REJECTED') && !readNotificationIds.includes(e.id)
+    ).length;
+  }, [userExpenses, readNotificationIds]);
+
+  const markNotificationAsRead = useCallback((id: string) => {
+    setReadNotificationIds(prev => {
+      if (prev.includes(id)) return prev;
+      const next = [...prev, id];
+      localStorage.setItem('gnh_read_notifs', JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const markAllNotificationsAsRead = useCallback(() => {
+    const allIds = userExpenses.map(e => e.id);
+    setReadNotificationIds(prev => {
+      const merged = Array.from(new Set([...prev, ...allIds]));
+      localStorage.setItem('gnh_read_notifs', JSON.stringify(merged));
+      return merged;
+    });
+  }, [userExpenses]);
 
   // Authentication Handlers
   const loginWithPhone = async (phone: string): Promise<boolean> => {
@@ -467,7 +521,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return saved;
   };
 
-  const reviewExpense = async (id: string, status: 'APPROVED' | 'REJECTED', reason?: string) => {
+  const reviewExpense = async (id: string, status: ExpenseStatus, reason?: string) => {
     await storageService.updateExpenseStatus(id, status, reason);
     setExpenses(prev =>
       prev.map(e =>
@@ -481,9 +535,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       )
     );
     showToast({
-      type: status === 'APPROVED' ? 'success' : 'warning',
-      title: `Expense ${status}`,
-      message: reason ? `Reason: ${reason}` : undefined,
+      type: status === 'APPROVED' ? 'success' : status === 'REJECTED' ? 'error' : 'info',
+      title: `Expense ${status === 'APPROVED' ? 'Approved' : status === 'REJECTED' ? 'Rejected' : 'Pending'}`,
+      message: `Expense status changed to ${status}.`,
     });
   };
 
@@ -648,6 +702,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         toasts,
         showToast,
         removeToast,
+        isNotificationModalOpen,
+        setIsNotificationModalOpen,
+        userExpenses,
+        unreadNotificationCount,
+        readNotificationIds,
+        markNotificationAsRead,
+        markAllNotificationsAsRead,
         communityCostPerMember,
         updateCommunityCostPerMember,
         currentDevoteeSummary,

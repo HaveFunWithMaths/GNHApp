@@ -9,6 +9,7 @@ import {
   LogOut,
   ShieldCheck,
   Clock,
+  Bell,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { Button } from '../common/Button';
@@ -36,6 +37,8 @@ export const Navbar: React.FC = () => {
     toggleTheme,
     setActiveTab,
     activeTab,
+    setIsNotificationModalOpen,
+    unreadNotificationCount,
   } = useApp();
 
   const [countdown, setCountdown] = useState(() => getCutoffCountdown(activeMonth));
@@ -156,6 +159,23 @@ export const Navbar: React.FC = () => {
                 <Moon className="w-4 h-4 text-slate-600" />
               )}
             </button>
+
+            {/* Notification Bell for logged-in devotee or guest */}
+            {(activeDevotee || guestName) && (
+              <button
+                onClick={() => setIsNotificationModalOpen(true)}
+                className="relative p-2 rounded-xl text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                aria-label="View Expense Notifications"
+                title="Expense Status Notifications"
+              >
+                <Bell className="w-4 h-4 text-slate-600 dark:text-slate-300" />
+                {unreadNotificationCount > 0 && (
+                  <span className="absolute top-0.5 right-0.5 flex h-4 min-w-4 px-1 items-center justify-center rounded-full bg-rose-500 text-[9px] font-extrabold text-white shadow-sm ring-2 ring-white dark:ring-slate-900 animate-pulse">
+                    {unreadNotificationCount}
+                  </span>
+                )}
+              </button>
+            )}
 
             {/* Admin indicator ONLY shown if admin is logged in */}
             {isAdmin && (

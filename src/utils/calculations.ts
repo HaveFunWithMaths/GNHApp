@@ -86,6 +86,56 @@ export function getCashSettlementDayFormatted(cycleMonth: string): string {
 }
 
 /**
+ * Formats an expense date string ('YYYY-MM-DD') into a human-readable format like "18 Aug 2026"
+ */
+export function formatExpenseDate(dateStr?: string | null): string {
+  if (!dateStr) return '-';
+  try {
+    const cleanDate = dateStr.slice(0, 10);
+    const parts = cleanDate.split('-');
+    if (parts.length === 3) {
+      const year = parseInt(parts[0], 10);
+      const month = parseInt(parts[1], 10) - 1;
+      const day = parseInt(parts[2], 10);
+      const d = new Date(year, month, day);
+      if (!isNaN(d.getTime())) {
+        const dayFormatted = d.getDate();
+        const monthName = d.toLocaleDateString('en-US', { month: 'short' });
+        const yearFormatted = d.getFullYear();
+        return `${dayFormatted} ${monthName} ${yearFormatted}`;
+      }
+    }
+  } catch {
+    // fallback
+  }
+  return dateStr.slice(0, 10);
+}
+
+/**
+ * Formats an ISO submission timestamp into a readable date and time, e.g. "27 Aug 2026, 10:21 AM"
+ */
+export function formatSubmissionDateTime(isoStr?: string | null): string {
+  if (!isoStr) return '-';
+  try {
+    const d = new Date(isoStr);
+    if (!isNaN(d.getTime())) {
+      const day = d.getDate();
+      const monthName = d.toLocaleDateString('en-US', { month: 'short' });
+      const year = d.getFullYear();
+      const timeStr = d.toLocaleTimeString('en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+      });
+      return `${day} ${monthName} ${year}, ${timeStr}`;
+    }
+  } catch {
+    // fallback
+  }
+  return isoStr;
+}
+
+/**
  * Generates the custom Vaishnava reminder message for monthly prasadam & expense submissions
  */
 export function generateCustomReminderMessage(
@@ -396,15 +446,24 @@ export function computeDevoteeMonthlySummary(
       e.type === 'REGULAR'
   );
 
-  const approved_expenses = devoteeRegularExpenses
+  const approved_only = devoteeRegularExpenses
     .filter(e => e.status === 'APPROVED')
+    .reduce((sum, e) => sum + Number(e.amount), 0);
+
+  const pending_expenses = devoteeRegularExpenses
+    .filter(e => e.status === 'PENDING')
     .reduce((sum, e) => sum + Number(e.amount), 0);
 
   const rejected_expenses = devoteeRegularExpenses
     .filter(e => e.status === 'REJECTED')
     .reduce((sum, e) => sum + Number(e.amount), 0);
 
-  const current_month_net = prasadam_cost - approved_expenses;
+  const has_pending_expenses = pending_expenses > 0;
+
+  // As far as pending calculations are concerned, assumed that they are approved:
+  const assumed_approved_expenses = approved_only + pending_expenses;
+
+  const current_month_net = prasadam_cost - assumed_approved_expenses;
   const carried_forward = overrideCarriedForward !== undefined
     ? Number(overrideCarriedForward || 0)
     : (ledger ? Number(ledger.carried_forward_amount || 0) : 0);
@@ -414,9 +473,9 @@ export function computeDevoteeMonthlySummary(
 
   const final_balance = current_month_net + carried_forward - settlement_reported;
 
-  // Filter Janmashtami expenses
+  // Filter Janmashtami expenses (treat APPROVED and PENDING as assumed seva)
   const devoteeJanmashtamiExpenses = allExpenses.filter(
-    e => e.devotee_id === devotee.id && e.type === 'JANMASHTAMI' && e.status === 'APPROVED'
+    e => e.devotee_id === devotee.id && e.type === 'JANMASHTAMI' && (e.status === 'APPROVED' || e.status === 'PENDING')
   );
   const janmashtami_expenses = devoteeJanmashtamiExpenses.reduce((sum, e) => sum + Number(e.amount), 0);
 
@@ -434,7 +493,9 @@ export function computeDevoteeMonthlySummary(
     community_cost_per_member: defaultGroupCost,
     community_cost,
     prasadam_cost,
-    approved_expenses,
+    approved_expenses: assumed_approved_expenses,
+    pending_expenses,
+    has_pending_expenses,
     rejected_expenses,
     current_month_net,
     carried_forward,

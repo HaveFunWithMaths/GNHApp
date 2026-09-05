@@ -1,4 +1,4 @@
-import { Devotee, PrasadamCount, Expense, MonthlyLedger } from '../types';
+import { Devotee, PrasadamCount, Expense, ExpenseStatus, MonthlyLedger } from '../types';
 import { INITIAL_DEVOTEES } from '../data/seedDevotees';
 import { supabase, isSupabaseConfigured } from './supabase';
 import { calculateDevoteeMaxCounts, getAllDatesInMonth } from '../utils/calculations';
@@ -466,10 +466,20 @@ class StorageService {
         }
         const { data, error } = await query;
         if (!error && data) {
-          const mapped: Expense[] = data.map((d: any) => ({
-            ...d,
-            date: d.date || (d.created_at ? d.created_at.slice(0, 10) : undefined),
-          }));
+          const mapped: Expense[] = data.map((d: any) => {
+            let status: ExpenseStatus = d.status || 'PENDING';
+            let rejection_reason = d.rejection_reason || null;
+            if (d.rejection_reason === '__PENDING__' || d.rejection_reason === 'PENDING_APPROVAL') {
+              status = 'PENDING';
+              rejection_reason = null;
+            }
+            return {
+              ...d,
+              status,
+              rejection_reason,
+              date: d.date || (d.created_at ? d.created_at.slice(0, 10) : undefined),
+            };
+          });
           localStorage.setItem(STORAGE_KEYS.EXPENSES, JSON.stringify(mapped));
           return mapped;
         }
@@ -480,10 +490,20 @@ class StorageService {
 
     const raw = localStorage.getItem(STORAGE_KEYS.EXPENSES);
     const expenses: Expense[] = raw ? JSON.parse(raw) : [];
-    const normalized: Expense[] = expenses.map(e => ({
-      ...e,
-      date: e.date || (e.created_at ? e.created_at.slice(0, 10) : undefined),
-    }));
+    const normalized: Expense[] = expenses.map(e => {
+      let status: ExpenseStatus = e.status || 'PENDING';
+      let rejection_reason = e.rejection_reason || null;
+      if (e.rejection_reason === '__PENDING__' || e.rejection_reason === 'PENDING_APPROVAL') {
+        status = 'PENDING';
+        rejection_reason = null;
+      }
+      return {
+        ...e,
+        status,
+        rejection_reason,
+        date: e.date || (e.created_at ? e.created_at.slice(0, 10) : undefined),
+      };
+    });
     if (cycleMonth) {
       return normalized.filter(
         e => e.cycle_month === cycleMonth || (e.date && e.date.startsWith(cycleMonth)) || e.type === 'JANMASHTAMI'
@@ -503,7 +523,7 @@ class StorageService {
       date: expenseDate,
       cycle_month: cycleMonth,
       created_at: new Date().toISOString(),
-      status: expense.status || 'APPROVED',
+      status: expense.status || 'PENDING',
     };
 
     const updated = [newExpense, ...allExpenses.filter(e => e.id !== newExpense.id)];
@@ -513,9 +533,20 @@ class StorageService {
       try {
         const { error } = await supabase.from('expenses').upsert(newExpense, { onConflict: 'id' });
         if (error) {
-          console.warn('Supabase saveExpense error, trying fallback without date:', error);
-          // If remote table schema doesn't have 'date' column yet, fallback to inserting without 'date'
-          if (error.message?.includes('date') || error.details?.includes('date') || error.code === '42703') {
+          console.warn('Supabase saveExpense error, trying fallback:', error);
+          // If remote enum doesn't support 'PENDING' yet, fallback to saving with status 'APPROVED' and rejection_reason '__PENDING__'
+          if (error.message?.includes('PENDING') || error.code === '22P02') {
+            const fallbackExpense = {
+              ...newExpense,
+              status: 'APPROVED',
+              rejection_reason: '__PENDING__',
+            };
+            const { error: err2 } = await supabase.from('expenses').upsert(fallbackExpense, { onConflict: 'id' });
+            if (err2 && (err2.message?.includes('date') || err2.code === '42703')) {
+              const { date, ...withoutDate } = fallbackExpense;
+              await supabase.from('expenses').upsert(withoutDate, { onConflict: 'id' });
+            }
+          } else if (error.message?.includes('date') || error.details?.includes('date') || error.code === '42703') {
             const { date, ...withoutDate } = newExpense;
             await supabase.from('expenses').upsert(withoutDate, { onConflict: 'id' });
           }
@@ -531,25 +562,37 @@ class StorageService {
 
   async updateExpenseStatus(
     id: string,
-    status: 'APPROVED' | 'REJECTED',
+    status: ExpenseStatus,
     rejection_reason?: string | null
   ): Promise<void> {
     const allExpenses = await this.getExpenses();
     const index = allExpenses.findIndex(e => e.id === id);
     if (index >= 0) {
+      const finalRejectionReason = status === 'REJECTED'
+        ? rejection_reason || 'Rejected by Admin'
+        : null;
+
       allExpenses[index] = {
         ...allExpenses[index],
         status,
-        rejection_reason: status === 'REJECTED' ? rejection_reason || 'Rejected by Admin' : null,
+        rejection_reason: finalRejectionReason,
       };
       localStorage.setItem(STORAGE_KEYS.EXPENSES, JSON.stringify(allExpenses));
 
       if (isSupabaseConfigured() && supabase) {
         try {
-          await supabase.from('expenses').update({
+          const { error } = await supabase.from('expenses').update({
             status,
-            rejection_reason: allExpenses[index].rejection_reason,
+            rejection_reason: finalRejectionReason,
           }).eq('id', id);
+
+          if (error && (error.message?.includes('PENDING') || error.code === '22P02') && status === 'PENDING') {
+            // Fallback for pending if enum lacks 'PENDING'
+            await supabase.from('expenses').update({
+              status: 'APPROVED',
+              rejection_reason: '__PENDING__',
+            }).eq('id', id);
+          }
         } catch (err) {
           console.warn('Supabase updateExpenseStatus error', err);
         }
