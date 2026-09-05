@@ -15,6 +15,8 @@ import {
   Sparkles,
   Users,
   UserCheck,
+  Bell,
+  AlertCircle,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useApp } from '../context/AppContext';
@@ -27,6 +29,8 @@ import {
   formatMonthName,
   formatDevoteeName,
   PRASADAM_RATES,
+  formatExpenseDate,
+  formatSubmissionDateTime,
 } from '../utils/calculations';
 import { formatDevoteeFamilyDisplay } from '../utils/devoteeHelpers';
 import { Expense } from '../types';
@@ -41,6 +45,7 @@ export const ReportsPage: React.FC = () => {
     requestSettlement,
     expenses,
     setIsLoginModalOpen,
+    setIsNotificationModalOpen,
   } = useApp();
 
   const [isSettleModalOpen, setIsSettleModalOpen] = useState(false);
@@ -141,6 +146,31 @@ export const ReportsPage: React.FC = () => {
 
   return (
     <div className="max-w-5xl mx-auto space-y-6 pb-20">
+      {/* 1. Devotee Notification Banner for Rejected Expenses */}
+      {devoteeExpenses.some(e => e.status === 'REJECTED') && (
+        <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-between gap-3 text-xs text-rose-800 dark:text-rose-200">
+          <div className="flex items-center gap-2.5">
+            <AlertCircle className="w-5 h-5 text-rose-600 dark:text-rose-400 shrink-0" />
+            <div>
+              <span className="font-bold">
+                Attention: You have {devoteeExpenses.filter(e => e.status === 'REJECTED').length} rejected expense(s).
+              </span>
+              <p className="text-slate-600 dark:text-slate-400 text-[11px] mt-0.5">
+                Check admin notes and reasons in your notification center.
+              </p>
+            </div>
+          </div>
+          <Button
+            onClick={() => setIsNotificationModalOpen(true)}
+            variant="outline"
+            size="sm"
+            className="text-xs shrink-0 text-rose-600 dark:text-rose-400 border-rose-500/40 hover:bg-rose-50 dark:hover:bg-rose-950/40 font-semibold"
+          >
+            <Bell className="w-3.5 h-3.5 mr-1" />
+            <span>View Notifications</span>
+          </Button>
+        </div>
+      )}
 
       {/* 2. Main Financial Statement Hero Card */}
       {summary && (
@@ -193,6 +223,7 @@ export const ReportsPage: React.FC = () => {
                     }`}
                 >
                   {formatRupee(summary.final_balance)}
+                  {summary.has_pending_expenses && '*'}
                 </div>
                 <span className="text-xs font-medium mt-1">
                   {summary.final_balance > 0 ? (
@@ -235,9 +266,11 @@ export const ReportsPage: React.FC = () => {
               </div>
               <div className="text-xl font-bold text-emerald-600 dark:text-emerald-400">
                 {summary.approved_expenses > 0 ? `- ${formatRupee(summary.approved_expenses)}` : '₹0'}
+                {summary.has_pending_expenses && '*'}
               </div>
               <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
-                {regularExpenses.filter((e: Expense) => e.status === 'APPROVED').length} approved bills
+                {regularExpenses.filter((e: Expense) => e.status === 'APPROVED').length} approved
+                {summary.has_pending_expenses && `, ${regularExpenses.filter((e: Expense) => e.status === 'PENDING').length} pending approval`}
               </div>
             </div>
 
@@ -269,6 +302,16 @@ export const ReportsPage: React.FC = () => {
               </div>
             </div>
           </div>
+
+          {/* Footnote for assumed approved pending expenses */}
+          {summary.has_pending_expenses && (
+            <div className="px-5 py-2.5 bg-amber-500/10 border-b border-amber-500/20 text-xs text-amber-800 dark:text-amber-200 flex items-center gap-1.5">
+              <Info className="w-3.5 h-3.5 flex-shrink-0 text-amber-600 dark:text-amber-400" />
+              <span>
+                * Calculations include {formatRupee(summary.pending_expenses)} in pending expenses assumed as approved, subject to final verification by Admin.
+              </span>
+            </div>
+          )}
 
           {/* Detailed Prasadam Cost Math & Calculation Card */}
           <div className="p-4 sm:p-5 bg-slate-100/60 dark:bg-slate-800/40 border-b border-slate-200 dark:border-slate-800">
@@ -469,10 +512,10 @@ export const ReportsPage: React.FC = () => {
                 <h3 className="text-lg font-bold text-slate-900 dark:text-white">
                   Krishna Janmashtami Expenses
                 </h3>
-                <Badge variant="saffron">Isolated Account</Badge>
+                <Badge variant="saffron">All-Time Ledger</Badge>
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                Special festival contributions and expenses (not merged with monthly meal ledger)
+                Special festival contributions and expenses for all time (not categorized by month, isolated from monthly meal billing)
               </p>
             </div>
           </div>
@@ -497,12 +540,12 @@ export const ReportsPage: React.FC = () => {
                     {exp.title}
                   </div>
                   <div className="text-slate-400 text-[11px]">
-                    By {exp.payer_name} • {exp.date || exp.created_at.slice(0, 10)}
+                    By {exp.payer_name} • Expense: {formatExpenseDate(exp.date || exp.created_at)} • Submitted: {formatSubmissionDateTime(exp.created_at)}
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
-                  <Badge variant={exp.status === 'APPROVED' ? 'success' : 'danger'}>
-                    {exp.status}
+                  <Badge variant={exp.status === 'APPROVED' ? 'success' : exp.status === 'PENDING' ? 'warning' : 'danger'}>
+                    {exp.status === 'APPROVED' ? 'Approved' : exp.status === 'PENDING' ? 'Pending Approval' : 'Rejected'}
                   </Badge>
                   <span className="font-bold text-sm text-slate-900 dark:text-slate-100">
                     {formatRupee(exp.amount)}

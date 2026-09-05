@@ -14,7 +14,7 @@ import { Card } from '../components/common/Card';
 import { Button } from '../components/common/Button';
 import { Badge } from '../components/common/Badge';
 import { Modal } from '../components/common/Modal';
-import { formatRupee, getDefaultExpenseDate } from '../utils/calculations';
+import { formatRupee, getDefaultExpenseDate, formatExpenseDate, formatSubmissionDateTime } from '../utils/calculations';
 import { getFamilyMemberNames, getPrimaryFamilyMemberName } from '../utils/devoteeHelpers';
 import { compressImage } from '../utils/imageCompressor';
 import { storageService } from '../services/storageService';
@@ -97,11 +97,15 @@ export const JanmashtamiPage: React.FC = () => {
   );
 
   const totalJanmashtamiFund = allJanmashtamiExpenses
-    .filter(e => e.status === 'APPROVED')
+    .filter(e => e.status === 'APPROVED' || e.status === 'PENDING')
     .reduce((sum, e) => sum + Number(e.amount), 0);
 
   const myTotal = myJanmashtamiExpenses
-    .filter(e => e.status === 'APPROVED')
+    .filter(e => e.status === 'APPROVED' || e.status === 'PENDING')
+    .reduce((sum, e) => sum + Number(e.amount), 0);
+
+  const myPendingTotal = myJanmashtamiExpenses
+    .filter(e => e.status === 'PENDING')
     .reduce((sum, e) => sum + Number(e.amount), 0);
 
   const handleReceiptChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -188,7 +192,7 @@ export const JanmashtamiPage: React.FC = () => {
         amount: amountNum,
         comments: expenseComments.trim() || null,
         bill_url: attachmentUrl || null,
-        status: 'APPROVED',
+        status: 'PENDING',
       });
 
       // Reset form & revoke preview URL
@@ -410,23 +414,37 @@ export const JanmashtamiPage: React.FC = () => {
         </form>
       </Card>
 
-      {/* 3. Community Janmashtami Ledger Table */}
+      {/* 3. Devotee Janmashtami Ledger Table (Users see only their own expenses) */}
       <Card className="p-5 sm:p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-base font-bold text-slate-900 dark:text-white">
-            All Janmashtami Expenses Entries ({allJanmashtamiExpenses.length})
-          </h3>
-          <span className="text-xs text-amber-600 dark:text-amber-400 font-semibold">
-            Total Seva: {formatRupee(totalJanmashtamiFund)}
-          </span>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
+          <div>
+            <h3 className="text-base font-bold text-slate-900 dark:text-white">
+              My Janmashtami Expenses ({myJanmashtamiExpenses.length})
+            </h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Only your submitted festival expenses are displayed here.
+            </p>
+          </div>
+          <div className="text-right">
+            <span className="text-xs text-amber-600 dark:text-amber-400 font-bold block">
+              My Total Seva: {formatRupee(myTotal)}
+              {myPendingTotal > 0 && '*'}
+            </span>
+            {myPendingTotal > 0 && (
+              <span className="text-[10px] text-slate-400">
+                * Includes {formatRupee(myPendingTotal)} pending approval
+              </span>
+            )}
+          </div>
         </div>
 
-        {allJanmashtamiExpenses.length > 0 ? (
+        {myJanmashtamiExpenses.length > 0 ? (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs border-collapse">
               <thead>
                 <tr className="border-b border-slate-200 dark:border-slate-700 text-slate-400 uppercase font-semibold">
-                  <th className="py-2.5 px-3">Date</th>
+                  <th className="py-2.5 px-3">Expense Date</th>
+                  <th className="py-2.5 px-3">Submitted At</th>
                   <th className="py-2.5 px-3">Item / Seva</th>
                   <th className="py-2.5 px-3">Payer</th>
                   <th className="py-2.5 px-3 text-right">Amount</th>
@@ -435,10 +453,13 @@ export const JanmashtamiPage: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium">
-                {allJanmashtamiExpenses.map((exp: Expense) => (
+                {myJanmashtamiExpenses.map((exp: Expense) => (
                   <tr key={exp.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
-                    <td className="py-3 px-3 text-slate-500 font-mono">
-                      {exp.date || exp.created_at.slice(0, 10)}
+                    <td className="py-3 px-3 text-slate-700 dark:text-slate-300 font-mono font-medium">
+                      {formatExpenseDate(exp.date || exp.created_at)}
+                    </td>
+                    <td className="py-3 px-3 text-slate-500 dark:text-slate-400 font-mono text-[11px]">
+                      {formatSubmissionDateTime(exp.created_at)}
                     </td>
                     <td className="py-3 px-3">
                       <div className="font-bold text-slate-900 dark:text-white">
@@ -446,6 +467,11 @@ export const JanmashtamiPage: React.FC = () => {
                       </div>
                       {exp.comments && (
                         <div className="text-[11px] text-slate-400">{exp.comments}</div>
+                      )}
+                      {exp.rejection_reason && (
+                        <div className="text-[10px] text-rose-500 font-semibold">
+                          Reason: {exp.rejection_reason}
+                        </div>
                       )}
                     </td>
                     <td className="py-3 px-3 text-slate-600 dark:text-slate-300">
@@ -472,6 +498,10 @@ export const JanmashtamiPage: React.FC = () => {
                         <Badge variant="success" size="sm">
                           Approved
                         </Badge>
+                      ) : exp.status === 'PENDING' ? (
+                        <Badge variant="warning" size="sm">
+                          Pending Approval
+                        </Badge>
                       ) : (
                         <Badge variant="danger" size="sm">
                           Rejected
@@ -482,10 +512,15 @@ export const JanmashtamiPage: React.FC = () => {
                 ))}
               </tbody>
             </table>
+            {myPendingTotal > 0 && (
+              <div className="mt-3 pt-2 border-t border-slate-100 dark:border-slate-800 text-[11px] text-slate-400 italic">
+                * Pending entries are assumed approved in calculations subject to final Admin verification.
+              </div>
+            )}
           </div>
         ) : (
           <div className="text-center py-8 text-xs text-slate-400">
-            No Janmashtami festival entries logged yet.
+            No Janmashtami festival entries logged by you yet.
           </div>
         )}
       </Card>
@@ -506,7 +541,7 @@ export const JanmashtamiPage: React.FC = () => {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
           {/* Card 1: Regular GNH Expense */}
           <div
             onClick={handleNavigateToRegularExpenses}
@@ -530,7 +565,7 @@ export const JanmashtamiPage: React.FC = () => {
                   />
                 </div>
                 <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200/60 dark:border-amber-800/60">
-                  2nd Tab
+                  Offset Prasadam
                 </span>
               </div>
 
@@ -538,14 +573,37 @@ export const JanmashtamiPage: React.FC = () => {
                 <h3 className="text-sm font-bold text-slate-900 dark:text-white group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors">
                   Regular GNH Expense
                 </h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
-                  Submit daily kitchen groceries, vegetables, and store purchases to offset monthly prasadam.
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Should be filled for monthly kitchen and maintenance offset:
                 </p>
+
+                <ul className="mt-3 space-y-1.5 text-xs text-slate-700 dark:text-slate-300">
+                  <li className="flex items-center gap-2">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
+                    <span>1. Groceries and Sabji</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
+                    <span>2. Diety Dept Expenses</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
+                    <span>3. Maintenance Expenses</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
+                    <span>4. Prasdam Transport</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
+                    <span>5. Gas Cylinder</span>
+                  </li>
+                </ul>
               </div>
             </div>
 
-            <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-xs font-semibold text-amber-600 dark:text-amber-400">
-              <span>Go to Expenses</span>
+            <div className="mt-5 pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-xs font-semibold text-amber-600 dark:text-amber-400">
+              <span>Go to Regular Expenses</span>
               <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
             </div>
           </div>
@@ -575,56 +633,34 @@ export const JanmashtamiPage: React.FC = () => {
                 <h3 className="text-sm font-bold text-slate-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
                   ARJUNA Expenses
                 </h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
-                  Submit ARJUNA devotee reimbursement and festival expenditure requests.
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Outreach, preaching & student development categories:
                 </p>
+
+                <ul className="mt-3 space-y-2 text-xs text-slate-700 dark:text-slate-300">
+                  <li className="flex items-start gap-2 leading-relaxed">
+                    <span className="shrink-0 text-xs">1️⃣</span>
+                    <span><strong>Youth & Campus Preaching:</strong> Boys/girls youth preaching, school cultivation, and student education & hostel sponsorships</span>
+                  </li>
+                  <li className="flex items-start gap-2 leading-relaxed">
+                    <span className="shrink-0 text-xs">2️⃣</span>
+                    <span><strong>Congregation & Community:</strong> Ramayana Sunday, Bal Gopal Kids programs & preacher travel for association</span>
+                  </li>
+                  <li className="flex items-start gap-2 leading-relaxed">
+                    <span className="shrink-0 text-xs">3️⃣</span>
+                    <span><strong>Literature & Administration:</strong> Wisdom literature distribution in schools/colleges & ARJUNA office expenses</span>
+                  </li>
+                </ul>
               </div>
             </div>
 
-            <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-xs font-semibold text-blue-600 dark:text-blue-400">
+            <div className="mt-5 pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-xs font-semibold text-blue-600 dark:text-blue-400">
               <span>Open ARJUNA Form</span>
               <ExternalLink className="w-4 h-4 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
             </div>
           </a>
 
-          {/* Card 3: Preaching Expenses */}
-          <a
-            href="https://forms.gle/Aji5QpTAp5ToFP5z9"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="group relative flex flex-col justify-between p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xs hover:shadow-md hover:border-purple-400 dark:hover:border-purple-500/50 transition-all"
-          >
-            <div>
-              <div className="flex items-start justify-between gap-2">
-                <div className="w-14 h-14 rounded-xl bg-purple-50/70 dark:bg-slate-800 border border-slate-200 dark:border-slate-700/80 p-1 flex items-center justify-center shrink-0 shadow-xs group-hover:scale-105 transition-transform overflow-hidden">
-                  <img
-                    src="/VSTLogo.jpeg"
-                    alt="VST Preaching Logo"
-                    className="w-full h-full object-contain rounded-lg"
-                  />
-                </div>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 dark:bg-purple-950/60 dark:text-purple-300 border border-purple-200/60 dark:border-purple-800/60">
-                  Preaching
-                </span>
-              </div>
-
-              <div className="mt-4">
-                <h3 className="text-sm font-bold text-slate-900 dark:text-white group-hover:text-purple-600 dark:group-hover:text-purple-400 transition-colors">
-                  Preaching Expenses
-                </h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
-                  Voice of Subconscious (VST) and outreach preaching programs expense claims.
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-xs font-semibold text-purple-600 dark:text-purple-400">
-              <span>Open Preaching Form</span>
-              <ExternalLink className="w-4 h-4 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
-            </div>
-          </a>
-
-          {/* Card 4: Influential people cultivation */}
+          {/* Card 3: Influential people cultivation */}
           <a
             href="https://forms.gle/batrkRmLYvYQQyfJ9"
             target="_blank"
@@ -651,7 +687,7 @@ export const JanmashtamiPage: React.FC = () => {
               </div>
             </div>
 
-            <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+            <div className="mt-5 pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-xs font-semibold text-emerald-600 dark:text-emerald-400">
               <span>Open Cultivation Form</span>
               <ExternalLink className="w-4 h-4 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
             </div>

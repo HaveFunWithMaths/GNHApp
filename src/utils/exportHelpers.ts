@@ -31,6 +31,8 @@ export function exportToExcel(
     'Community Cost (₹)': s.community_cost,
     'Total Prasadam Cost (₹)': s.prasadam_cost,
     'Approved Regular Expenses (₹)': s.approved_expenses,
+    'Pending Expenses Assumed (₹)': s.pending_expenses || 0,
+    'Has Pending Expenses': s.has_pending_expenses ? 'YES' : 'NO',
     'Current Month Net (₹)': s.current_month_net,
     'Carried Forward (₹)': s.carried_forward,
     'Settled Reported (₹)': s.settlement_reported,
@@ -62,11 +64,16 @@ export function exportToExcel(
   const wsCounts = XLSX.utils.json_to_sheet(monthCounts);
   XLSX.utils.book_append_sheet(wb, wsCounts, 'Daily Counts');
 
-  // Sheet 3: Expense Ledger
-  const expenseData = allExpenses
-    .filter(e => e.cycle_month === cycleMonth || (e.date && e.date.startsWith(cycleMonth)) || e.type === 'JANMASHTAMI')
+  // Sheet 3: Regular Monthly Expenses (filtered strictly by Date of Expense)
+  const regularExpenseData = allExpenses
+    .filter(e => e.type !== 'JANMASHTAMI')
+    .filter(e => {
+      const expDate = e.date || (e.created_at ? e.created_at.slice(0, 10) : '');
+      return expDate.startsWith(cycleMonth);
+    })
     .map(e => ({
-      'Date': e.date || (e.created_at ? e.created_at.slice(0, 10) : cycleMonth),
+      'Expense Date': e.date || (e.created_at ? e.created_at.slice(0, 10) : cycleMonth),
+      'Submitted At': e.created_at || '-',
       'Cycle Month': e.cycle_month,
       'Type': e.type,
       'Group / Guest': e.devotee_id ? countsMap.get(e.devotee_id) : `Guest: ${e.guest_name || 'Anonymous'}`,
@@ -79,8 +86,27 @@ export function exportToExcel(
       'Bill Attached': e.bill_url ? 'YES' : 'NO'
     }));
 
-  const wsExpenses = XLSX.utils.json_to_sheet(expenseData);
-  XLSX.utils.book_append_sheet(wb, wsExpenses, 'Expense Ledger');
+  const wsExpenses = XLSX.utils.json_to_sheet(regularExpenseData);
+  XLSX.utils.book_append_sheet(wb, wsExpenses, 'Monthly Expenses');
+
+  // Sheet 4: Janmashtami Ledger (All Time)
+  const janmashtamiData = allExpenses
+    .filter(e => e.type === 'JANMASHTAMI')
+    .map(e => ({
+      'Expense Date': e.date || (e.created_at ? e.created_at.slice(0, 10) : '-'),
+      'Submitted At': e.created_at || '-',
+      'Devotee / Guest': e.devotee_id ? countsMap.get(e.devotee_id) : `Guest: ${e.guest_name || 'Anonymous'}`,
+      'Payer Name': e.payer_name,
+      'Title / Item': e.title,
+      'Amount (₹)': e.amount,
+      'Status': e.status,
+      'Rejection Reason': e.rejection_reason || '-',
+      'Comments': e.comments || '',
+      'Bill Attached': e.bill_url ? 'YES' : 'NO'
+    }));
+
+  const wsJanmashtami = XLSX.utils.json_to_sheet(janmashtamiData);
+  XLSX.utils.book_append_sheet(wb, wsJanmashtami, 'Janmashtami (All Time)');
 
   // Write and trigger download
   const filename = `GNH_Ledger_${cycleMonth}_${monthName.replace(/\s+/g, '_')}.xlsx`;

@@ -33,10 +33,13 @@ EXCEPTION
 END $$;
 
 DO $$ BEGIN
-    CREATE TYPE expense_status AS ENUM ('APPROVED', 'REJECTED');
+    CREATE TYPE expense_status AS ENUM ('PENDING', 'APPROVED', 'REJECTED');
 EXCEPTION
     WHEN duplicate_object THEN null;
 END $$;
+
+-- In case expense_status enum was already created earlier in Supabase, add PENDING:
+ALTER TYPE expense_status ADD VALUE IF NOT EXISTS 'PENDING';
 
 CREATE TABLE IF NOT EXISTS expenses (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -49,7 +52,7 @@ CREATE TABLE IF NOT EXISTS expenses (
     amount NUMERIC(10, 2) NOT NULL, -- Supports negative values
     comments TEXT,
     bill_url TEXT,
-    status expense_status DEFAULT 'APPROVED',
+    status expense_status DEFAULT 'PENDING',
     rejection_reason TEXT,
     cycle_month VARCHAR(7) NOT NULL, -- Format: 'YYYY-MM'
     created_at TIMESTAMPTZ DEFAULT NOW()
