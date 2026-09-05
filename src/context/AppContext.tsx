@@ -10,7 +10,8 @@ import {
 import { storageService } from '../services/storageService';
 import {
   getCurrentCycleMonth,
-  computeDevoteeMonthlySummary,
+  computeDevoteeMonthlySummaryWithCarryForward,
+  MIN_CYCLE_MONTH,
 } from '../utils/calculations';
 import { findDevoteeByPhone, getFamilyMemberNames } from '../utils/devoteeHelpers';
 
@@ -86,6 +87,7 @@ interface AppContextType {
   adminVerifySettlement: (devoteeId: string, amount: number, date: string, notes?: string) => Promise<void>;
   adminResetSettlement: (devoteeId: string) => Promise<void>;
   carryOverBalances: (nextMonth: string) => Promise<number>;
+  updateDevoteeCarryForward: (devoteeId: string, cycleMonth: string, amount: number) => Promise<void>;
   saveDevotee: (devotee: Devotee) => Promise<void>;
   deleteDevotee: (devoteeId: string) => Promise<void>;
   refreshData: () => Promise<void>;
@@ -104,7 +106,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // URL Query Sync initialization
   const searchParams = new URLSearchParams(window.location.search);
-  const initialMonth = searchParams.get('month') || getCurrentCycleMonth();
+  const rawInitialMonth = searchParams.get('month') || getCurrentCycleMonth();
+  const initialMonth = rawInitialMonth < MIN_CYCLE_MONTH ? MIN_CYCLE_MONTH : rawInitialMonth;
   const initialTab = (searchParams.get('tab') as ActiveTab) || 'reports';
   const initialGuest = searchParams.get('guest') || storageService.getActiveGuest();
 
@@ -187,9 +190,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [activeMonth, activeDevotee, guestName, isAdmin, updateUrlParams]);
 
   const setActiveMonth = useCallback((month: string) => {
-    setActiveMonthState(month);
+    const clampedMonth = month < MIN_CYCLE_MONTH ? MIN_CYCLE_MONTH : month;
+    setActiveMonthState(clampedMonth);
     const activePhone = storageService.getActivePhone() || activeDevotee?.phone_number || null;
-    updateUrlParams(activeTab, month, activePhone, guestName);
+    updateUrlParams(activeTab, clampedMonth, activePhone, guestName);
   }, [activeTab, activeDevotee, guestName, updateUrlParams]);
 
   // Load core data from storage service
@@ -197,9 +201,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       const [devoteesList, countsList, expensesList, ledgersList, pin, commCost] = await Promise.all([
         storageService.getDevotees(),
-        storageService.getPrasadamCounts(activeMonth),
-        storageService.getExpenses(activeMonth),
-        storageService.getMonthlyLedgers(activeMonth),
+        storageService.getPrasadamCounts(),
+        storageService.getExpenses(),
+        storageService.getMonthlyLedgers(),
         storageService.getSystemConfig('admin_pin_hash', '192108'),
         storageService.getSystemConfig('community_cost_per_member', '500'),
       ]);
@@ -237,16 +241,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   }, [refreshData]);
 
-  // Compute summaries
+  // Compute summaries with multi-month recursive carry forward
   const allDevoteeSummaries = useMemo(() => {
     return devotees.map(devotee => {
-      const ledger = monthlyLedgers.find(l => l.devotee_id === devotee.id);
-      return computeDevoteeMonthlySummary(
+      return computeDevoteeMonthlySummaryWithCarryForward(
         devotee,
         activeMonth,
         prasadamCounts,
         expenses,
-        ledger,
+        monthlyLedgers,
         communityCostPerMember
       );
     });
@@ -254,13 +257,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const currentDevoteeSummary = useMemo(() => {
     if (!activeDevotee) return null;
-    const ledger = monthlyLedgers.find(l => l.devotee_id === activeDevotee.id);
-    return computeDevoteeMonthlySummary(
+    return computeDevoteeMonthlySummaryWithCarryForward(
       activeDevotee,
       activeMonth,
       prasadamCounts,
       expenses,
-      ledger,
+      monthlyLedgers,
       communityCostPerMember
     );
   }, [activeDevotee, activeMonth, prasadamCounts, expenses, monthlyLedgers, communityCostPerMember]);
@@ -555,6 +557,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return count;
   };
 
+  const updateDevoteeCarryForward = async (devoteeId: string, cycleMonth: string, amount: number) => {
+    const saved = await storageService.saveDevoteeCarryForward(devoteeId, cycleMonth, amount);
+    setMonthlyLedgers(prev => {
+      const idx = prev.findIndex(l => l.devotee_id === devoteeId && l.cycle_month === cycleMonth);
+      if (idx >= 0) {
+        const updated = [...prev];
+        updated[idx] = saved;
+        return updated;
+      }
+      return [...prev, saved];
+    });
+    showToast({
+      type: 'success',
+      title: 'Carry Forward Updated',
+      message: `Carry forward adjusted to ₹${amount}.`,
+    });
+  };
+
   const saveDevotee = async (devotee: Devotee) => {
     const saved = await storageService.saveDevotee(devotee);
     setDevotees(prev => {
@@ -650,6 +670,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         adminVerifySettlement,
         adminResetSettlement,
         carryOverBalances,
+        updateDevoteeCarryForward,
         saveDevotee,
         deleteDevotee,
         refreshData,

@@ -2,7 +2,6 @@ import React, { useState, useMemo } from 'react';
 import {
   ShieldCheck,
   Users,
-  FileText,
   IndianRupee,
   Send,
   Download,
@@ -20,6 +19,8 @@ import {
   Eye,
   Trash2,
   ExternalLink,
+  Receipt,
+  Sparkles,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { Card } from '../components/common/Card';
@@ -35,6 +36,7 @@ import {
   getCutoffFormattedDate,
   generateCustomReminderMessage,
   formatDevoteeName,
+  getNextCycleMonth,
 } from '../utils/calculations';
 import {
   normalizeFamilyMembers,
@@ -47,7 +49,7 @@ import {
 } from '../utils/devoteeHelpers';
 import { exportToExcel, exportToPDF } from '../utils/exportHelpers';
 
-type AdminTab = 'matrix' | 'expenses' | 'settlement' | 'whatsapp' | 'devotees' | 'settings';
+type AdminTab = 'matrix' | 'regular-expenses' | 'janmashtami-expenses' | 'settlement' | 'whatsapp' | 'devotees' | 'settings';
 
 export const AdminPage: React.FC = () => {
   const {
@@ -64,6 +66,7 @@ export const AdminPage: React.FC = () => {
     adminVerifySettlement,
     adminResetSettlement,
     carryOverBalances,
+    updateDevoteeCarryForward,
     autoFillCounts,
     updatePrasadamCount,
     saveDevotee,
@@ -85,6 +88,35 @@ export const AdminPage: React.FC = () => {
   // Expense Rejection Modal
   const [rejectingExpense, setRejectingExpense] = useState<Expense | null>(null);
   const [rejectionReason, setRejectionReason] = useState('');
+
+  // Status Filters for Expenses
+  const [regularStatusFilter, setRegularStatusFilter] = useState<'ALL' | 'APPROVED' | 'REJECTED'>('ALL');
+  const [janmashtamiStatusFilter, setJanmashtamiStatusFilter] = useState<'ALL' | 'APPROVED' | 'REJECTED'>('ALL');
+
+  // Carry Forward Adjustment Modal
+  const [editingCarryForwardDevotee, setEditingCarryForwardDevotee] = useState<DevoteeMonthlySummary | null>(null);
+  const [carryForwardAmountInput, setCarryForwardAmountInput] = useState('');
+
+  const handleOpenEditCarryForward = (s: DevoteeMonthlySummary) => {
+    setEditingCarryForwardDevotee(s);
+    setCarryForwardAmountInput(s.carried_forward.toString());
+  };
+
+  const handleSaveCarryForward = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingCarryForwardDevotee) return;
+    const amount = parseFloat(carryForwardAmountInput);
+    if (isNaN(amount)) {
+      showToast({
+        type: 'error',
+        title: 'Invalid Amount',
+        message: 'Please enter a valid numeric amount.',
+      });
+      return;
+    }
+    await updateDevoteeCarryForward(editingCarryForwardDevotee.devotee.id, activeMonth, amount);
+    setEditingCarryForwardDevotee(null);
+  };
 
   // Direct Settle Modal
   const [settlingDevotee, setSettlingDevotee] = useState<DevoteeMonthlySummary | null>(null);
@@ -162,6 +194,73 @@ export const AdminPage: React.FC = () => {
     });
   }, [allDevoteeSummaries, searchTerm]);
 
+  // Separate Regular and Janmashtami expenses
+  const regularExpenses = useMemo(() => {
+    return expenses.filter(e => e.type === 'REGULAR');
+  }, [expenses]);
+
+  const janmashtamiExpenses = useMemo(() => {
+    return expenses.filter(e => e.type === 'JANMASHTAMI');
+  }, [expenses]);
+
+  const filteredRegularExpenses = useMemo(() => {
+    return regularExpenses.filter(e => {
+      if (regularStatusFilter !== 'ALL' && e.status !== regularStatusFilter) return false;
+      if (!searchTerm) return true;
+      const q = searchTerm.toLowerCase();
+      const devotee = devotees.find(d => d.id === e.devotee_id);
+      const devoteeName = devotee ? formatDevoteeName(devotee).toLowerCase() : '';
+      return (
+        e.title.toLowerCase().includes(q) ||
+        e.payer_name.toLowerCase().includes(q) ||
+        devoteeName.includes(q) ||
+        (e.comments && e.comments.toLowerCase().includes(q))
+      );
+    });
+  }, [regularExpenses, regularStatusFilter, searchTerm, devotees]);
+
+  const filteredJanmashtamiExpenses = useMemo(() => {
+    return janmashtamiExpenses.filter(e => {
+      if (janmashtamiStatusFilter !== 'ALL' && e.status !== janmashtamiStatusFilter) return false;
+      if (!searchTerm) return true;
+      const q = searchTerm.toLowerCase();
+      const devotee = devotees.find(d => d.id === e.devotee_id);
+      const devoteeName = devotee ? formatDevoteeName(devotee).toLowerCase() : '';
+      return (
+        e.title.toLowerCase().includes(q) ||
+        e.payer_name.toLowerCase().includes(q) ||
+        devoteeName.includes(q) ||
+        (e.comments && e.comments.toLowerCase().includes(q))
+      );
+    });
+  }, [janmashtamiExpenses, janmashtamiStatusFilter, searchTerm, devotees]);
+
+  // Regular Expense Financial Totals
+  const totalRegularAmount = useMemo(() => {
+    return regularExpenses.reduce((sum, e) => sum + Number(e.amount), 0);
+  }, [regularExpenses]);
+
+  const approvedRegularAmount = useMemo(() => {
+    return regularExpenses.filter(e => e.status === 'APPROVED').reduce((sum, e) => sum + Number(e.amount), 0);
+  }, [regularExpenses]);
+
+  const rejectedRegularAmount = useMemo(() => {
+    return regularExpenses.filter(e => e.status === 'REJECTED').reduce((sum, e) => sum + Number(e.amount), 0);
+  }, [regularExpenses]);
+
+  // Janmashtami Expense Financial Totals
+  const totalJanmashtamiAmount = useMemo(() => {
+    return janmashtamiExpenses.reduce((sum, e) => sum + Number(e.amount), 0);
+  }, [janmashtamiExpenses]);
+
+  const approvedJanmashtamiAmount = useMemo(() => {
+    return janmashtamiExpenses.filter(e => e.status === 'APPROVED').reduce((sum, e) => sum + Number(e.amount), 0);
+  }, [janmashtamiExpenses]);
+
+  const rejectedJanmashtamiAmount = useMemo(() => {
+    return janmashtamiExpenses.filter(e => e.status === 'REJECTED').reduce((sum, e) => sum + Number(e.amount), 0);
+  }, [janmashtamiExpenses]);
+
   // Overall totals across community
   const totalPrasadamCost = useMemo(() => {
     return allDevoteeSummaries.reduce((sum, s) => sum + s.prasadam_cost, 0);
@@ -216,14 +315,7 @@ export const AdminPage: React.FC = () => {
 
   // Handle Carry-Over Balances to next month
   const handleCarryOverToNextMonth = async () => {
-    const [yearStr, monthStr] = activeMonth.split('-');
-    let year = parseInt(yearStr, 10);
-    let month = parseInt(monthStr, 10) + 1;
-    if (month > 12) {
-      month = 1;
-      year += 1;
-    }
-    const nextMonth = `${year}-${month.toString().padStart(2, '0')}`;
+    const nextMonth = getNextCycleMonth(activeMonth);
 
     if (!confirm(`Roll forward current balances for ${allDevoteeSummaries.length} devotees into ${formatMonthName(nextMonth)}?`)) return;
     await carryOverBalances(nextMonth);
@@ -481,7 +573,8 @@ export const AdminPage: React.FC = () => {
       <div className="flex overflow-x-auto p-1 bg-slate-100 dark:bg-slate-800/80 rounded-2xl gap-1">
         {[
           { id: 'matrix', label: 'Global Matrix', icon: Users, badge: devotees.length },
-          { id: 'expenses', label: 'Expense Review', icon: FileText, badge: expenses.length },
+          { id: 'regular-expenses', label: 'Regular Expenses', icon: Receipt, badge: regularExpenses.length },
+          { id: 'janmashtami-expenses', label: 'Janmashtami Expenses', icon: Sparkles, badge: janmashtamiExpenses.length },
           { id: 'settlement', label: 'Settlements', icon: IndianRupee, badge: pendingSettlementSummaries.length },
           { id: 'whatsapp', label: 'WhatsApp Reminders', icon: Send, badge: allDevoteeSummaries.filter(s => s.unfilled_days > 0).length },
           { id: 'devotees', label: 'Devotee Roster', icon: Edit },
@@ -512,12 +605,18 @@ export const AdminPage: React.FC = () => {
       </div>
 
       {/* Search Bar for Views */}
-      {(activeAdminTab === 'matrix' || activeAdminTab === 'whatsapp' || activeAdminTab === 'devotees') && (
+      {(activeAdminTab === 'matrix' || activeAdminTab === 'whatsapp' || activeAdminTab === 'devotees' || activeAdminTab === 'regular-expenses' || activeAdminTab === 'janmashtami-expenses') && (
         <div className="relative">
           <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
             type="text"
-            placeholder="Search by devotee name, phone, or member..."
+            placeholder={
+              activeAdminTab === 'regular-expenses'
+                ? "Search regular expenses by title, payer, or notes..."
+                : activeAdminTab === 'janmashtami-expenses'
+                ? "Search Janmashtami expenses by title, payer, or notes..."
+                : "Search by devotee name, phone, or member..."
+            }
             value={searchTerm}
             onChange={e => setSearchTerm(e.target.value)}
             className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs sm:text-sm font-medium focus:ring-2 focus:ring-amber-500 outline-none shadow-sm"
@@ -621,7 +720,15 @@ export const AdminPage: React.FC = () => {
                           {formatRupee(s.approved_expenses)}
                         </td>
                         <td className="py-3 px-3 text-right font-mono">
-                          {formatRupee(s.carried_forward)}
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEditCarryForward(s)}
+                            className="inline-flex items-center gap-1 hover:underline text-slate-800 dark:text-slate-200 font-mono hover:text-amber-600 dark:hover:text-amber-400 group cursor-pointer"
+                            title="Click to adjust Carry Forward"
+                          >
+                            <span>{formatRupee(s.carried_forward)}</span>
+                            <Edit className="w-3 h-3 text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+                          </button>
                         </td>
                         <td className="py-3 px-3 text-right font-extrabold text-sm">
                           <span
@@ -680,16 +787,64 @@ export const AdminPage: React.FC = () => {
         </div>
       )}
 
-      {/* TAB 2: EXPENSE REVIEW QUEUE */}
-      {activeAdminTab === 'expenses' && (
+      {/* TAB 2: REGULAR EXPENSES REVIEW */}
+      {activeAdminTab === 'regular-expenses' && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-              All Expenses ({expenses.length})
-            </h3>
-            <p className="text-xs text-slate-400">
-              Expenses are auto-approved by default. Reject invalid receipts with an explanation.
-            </p>
+          {/* Summary Mini-Cards for Regular Expenses */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <Card className="p-3.5 border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Regular Seva</span>
+              <div className="text-lg font-black text-slate-900 dark:text-white mt-0.5 font-mono">
+                {formatRupee(totalRegularAmount)}
+              </div>
+              <span className="text-[10px] text-slate-500">{regularExpenses.length} total bills submitted</span>
+            </Card>
+
+            <Card className="p-3.5 border border-slate-200 dark:border-slate-800 bg-emerald-50/50 dark:bg-emerald-950/20">
+              <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">Approved Offsets</span>
+              <div className="text-lg font-black text-emerald-600 dark:text-emerald-400 mt-0.5 font-mono">
+                {formatRupee(approvedRegularAmount)}
+              </div>
+              <span className="text-[10px] text-slate-500">Offsets monthly devotee bills</span>
+            </Card>
+
+            <Card className="p-3.5 border border-slate-200 dark:border-slate-800 bg-rose-50/50 dark:bg-rose-950/20">
+              <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400 uppercase tracking-wider">Rejected</span>
+              <div className="text-lg font-black text-rose-600 dark:text-rose-400 mt-0.5 font-mono">
+                {formatRupee(rejectedRegularAmount)}
+              </div>
+              <span className="text-[10px] text-slate-500">{regularExpenses.filter(e => e.status === 'REJECTED').length} rejected purchases</span>
+            </Card>
+          </div>
+
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+            <div>
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <Receipt className="w-4 h-4 text-amber-500" />
+                <span>Regular Expenses Review ({filteredRegularExpenses.length})</span>
+              </h3>
+              <p className="text-xs text-slate-400">
+                Monthly groceries, vegetables, and cooking items offsetting prasadam bills.
+              </p>
+            </div>
+
+            {/* Filter Pills */}
+            <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl">
+              {(['ALL', 'APPROVED', 'REJECTED'] as const).map(status => (
+                <button
+                  key={status}
+                  type="button"
+                  onClick={() => setRegularStatusFilter(status)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                    regularStatusFilter === status
+                      ? 'bg-white dark:bg-slate-700 text-amber-600 dark:text-amber-400 shadow-xs'
+                      : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                  }`}
+                >
+                  {status}
+                </button>
+              ))}
+            </div>
           </div>
 
           <Card className="overflow-hidden border border-slate-200 dark:border-slate-800 shadow-sm">
@@ -698,96 +853,264 @@ export const AdminPage: React.FC = () => {
                 <thead className="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold border-b">
                   <tr>
                     <th className="py-3 px-3">Date</th>
-                    <th className="py-3 px-3">Type</th>
                     <th className="py-3 px-3">Item / Description</th>
                     <th className="py-3 px-3">Payer / Devotee</th>
                     <th className="py-3 px-3 text-right">Amount</th>
                     <th className="py-3 px-3 text-center">Receipt</th>
                     <th className="py-3 px-3 text-center">Status</th>
-                    <th className="py-3 px-3 text-center">Review</th>
+                    <th className="py-3 px-3 text-center">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium">
-                  {expenses.map(exp => {
-                    const devotee = devotees.find(d => d.id === exp.devotee_id);
-                    return (
-                      <tr key={exp.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
-                        <td className="py-3 px-3 text-slate-500 font-mono">
-                          {exp.date || exp.created_at.slice(0, 10)}
-                        </td>
-                        <td className="py-3 px-3">
-                          <Badge variant={exp.type === 'JANMASHTAMI' ? 'saffron' : 'default'} size="sm">
-                            {exp.type}
-                          </Badge>
-                        </td>
-                        <td className="py-3 px-3">
-                          <div className="font-bold text-slate-900 dark:text-white">
-                            {exp.title}
-                          </div>
-                          {exp.comments && (
-                            <div className="text-[10px] text-slate-400">{exp.comments}</div>
-                          )}
-                          {exp.rejection_reason && (
-                            <div className="text-[10px] text-rose-500 font-semibold">
-                              Reason: {exp.rejection_reason}
+                  {filteredRegularExpenses.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="py-8 text-center text-slate-400">
+                        No regular expenses found matching current filter.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredRegularExpenses.map(exp => {
+                      const devotee = devotees.find(d => d.id === exp.devotee_id);
+                      return (
+                        <tr key={exp.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                          <td className="py-3 px-3 text-slate-500 font-mono">
+                            {exp.date || exp.created_at.slice(0, 10)}
+                          </td>
+                          <td className="py-3 px-3">
+                            <div className="font-bold text-slate-900 dark:text-white">
+                              {exp.title}
                             </div>
-                          )}
-                        </td>
-                        <td className="py-3 px-3">
-                          <div className="font-bold text-slate-800 dark:text-slate-200">
-                            {exp.payer_name}
-                          </div>
-                          <div className="text-[10px] text-slate-400">
-                            {devotee ? formatDevoteeName(devotee) : `Guest: ${exp.guest_name}`}
-                          </div>
-                        </td>
-                        <td className="py-3 px-3 text-right font-bold text-slate-900 dark:text-white">
-                          {formatRupee(exp.amount)}
-                        </td>
-                        <td className="py-3 px-3 text-center">
-                          {exp.bill_url ? (
-                            <a
-                              href={exp.bill_url}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="text-amber-600 dark:text-amber-400 hover:underline font-bold inline-flex items-center gap-1"
-                            >
-                              <Eye className="w-3.5 h-3.5" />
-                              <span>View</span>
-                            </a>
-                          ) : (
-                            <span className="text-slate-400">-</span>
-                          )}
-                        </td>
-                        <td className="py-3 px-3 text-center">
-                          <Badge variant={exp.status === 'APPROVED' ? 'success' : 'danger'} size="sm">
-                            {exp.status}
-                          </Badge>
-                        </td>
-                        <td className="py-3 px-3 text-center">
-                          {exp.status === 'APPROVED' ? (
-                            <Button
-                              onClick={() => setRejectingExpense(exp)}
-                              variant="danger"
-                              size="sm"
-                              className="text-[10px] py-1 px-2.5"
-                            >
-                              Reject
-                            </Button>
-                          ) : (
-                            <Button
-                              onClick={() => reviewExpense(exp.id, 'APPROVED')}
-                              variant="secondary"
-                              size="sm"
-                              className="text-[10px] py-1 px-2.5 text-emerald-600 hover:bg-emerald-50"
-                            >
-                              Re-Approve
-                            </Button>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
+                            {exp.comments && (
+                              <div className="text-[10px] text-slate-400">{exp.comments}</div>
+                            )}
+                            {exp.rejection_reason && (
+                              <div className="text-[10px] text-rose-500 font-semibold">
+                                Reason: {exp.rejection_reason}
+                              </div>
+                            )}
+                          </td>
+                          <td className="py-3 px-3">
+                            <div className="font-bold text-slate-800 dark:text-slate-200">
+                              {exp.payer_name}
+                            </div>
+                            <div className="text-[10px] text-slate-400">
+                              {devotee ? formatDevoteeName(devotee) : (exp.guest_name ? `Guest: ${exp.guest_name}` : '-')}
+                            </div>
+                          </td>
+                          <td className="py-3 px-3 text-right font-bold text-slate-900 dark:text-white font-mono">
+                            {formatRupee(exp.amount)}
+                          </td>
+                          <td className="py-3 px-3 text-center">
+                            {exp.bill_url ? (
+                              <a
+                                href={exp.bill_url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-amber-600 dark:text-amber-400 hover:underline font-bold inline-flex items-center gap-1"
+                              >
+                                <Eye className="w-3.5 h-3.5" />
+                                <span>View</span>
+                              </a>
+                            ) : (
+                              <span className="text-slate-400">-</span>
+                            )}
+                          </td>
+                          <td className="py-3 px-3 text-center">
+                            <Badge variant={exp.status === 'APPROVED' ? 'success' : 'danger'} size="sm">
+                              {exp.status}
+                            </Badge>
+                          </td>
+                          <td className="py-3 px-3 text-center">
+                            {exp.status === 'APPROVED' ? (
+                              <Button
+                                onClick={() => setRejectingExpense(exp)}
+                                variant="danger"
+                                size="sm"
+                                className="text-[10px] py-1 px-2.5"
+                              >
+                                Reject
+                              </Button>
+                            ) : (
+                              <Button
+                                onClick={() => reviewExpense(exp.id, 'APPROVED')}
+                                variant="secondary"
+                                size="sm"
+                                className="text-[10px] py-1 px-2.5 text-emerald-600 hover:bg-emerald-50"
+                              >
+                                Re-Approve
+                              </Button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* TAB 2B: JANMASHTAMI EXPENSES REVIEW */}
+      {activeAdminTab === 'janmashtami-expenses' && (
+        <div className="space-y-4">
+          {/* Summary Mini-Cards for Janmashtami */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <Card className="p-3.5 border border-amber-200/80 dark:border-amber-800/60 bg-amber-500/5">
+              <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider">Total Janmashtami Seva</span>
+              <div className="text-lg font-black text-slate-900 dark:text-white mt-0.5 font-mono">
+                {formatRupee(totalJanmashtamiAmount)}
+              </div>
+              <span className="text-[10px] text-slate-500">{janmashtamiExpenses.length} festival expenses</span>
+            </Card>
+
+            <Card className="p-3.5 border border-slate-200 dark:border-slate-800 bg-emerald-50/50 dark:bg-emerald-950/20">
+              <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">Approved Festival Seva</span>
+              <div className="text-lg font-black text-emerald-600 dark:text-emerald-400 mt-0.5 font-mono">
+                {formatRupee(approvedJanmashtamiAmount)}
+              </div>
+              <span className="text-[10px] text-slate-500">Decor, flowers, deity seva & bhoga</span>
+            </Card>
+
+            <Card className="p-3.5 border border-slate-200 dark:border-slate-800 bg-rose-50/50 dark:bg-rose-950/20">
+              <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400 uppercase tracking-wider">Rejected</span>
+              <div className="text-lg font-black text-rose-600 dark:text-rose-400 mt-0.5 font-mono">
+                {formatRupee(rejectedJanmashtamiAmount)}
+              </div>
+              <span className="text-[10px] text-slate-500">{janmashtamiExpenses.filter(e => e.status === 'REJECTED').length} rejected items</span>
+            </Card>
+          </div>
+
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+            <div>
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-amber-500" />
+                <span>Sri Krishna Janmashtami Festival Expenses ({filteredJanmashtamiExpenses.length})</span>
+              </h3>
+              <p className="text-xs text-slate-400">
+                Special Janmashtami festival purchases and sponsorships (kept separate from monthly prasadam).
+              </p>
+            </div>
+
+            {/* Filter Pills */}
+            <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl">
+              {(['ALL', 'APPROVED', 'REJECTED'] as const).map(status => (
+                <button
+                  key={status}
+                  type="button"
+                  onClick={() => setJanmashtamiStatusFilter(status)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                    janmashtamiStatusFilter === status
+                      ? 'bg-white dark:bg-slate-700 text-amber-600 dark:text-amber-400 shadow-xs'
+                      : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                  }`}
+                >
+                  {status}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <Card className="overflow-hidden border border-slate-200 dark:border-slate-800 shadow-sm">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead className="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold border-b">
+                  <tr>
+                    <th className="py-3 px-3">Date</th>
+                    <th className="py-3 px-3">Item / Description</th>
+                    <th className="py-3 px-3">Payer / Devotee</th>
+                    <th className="py-3 px-3 text-right">Amount</th>
+                    <th className="py-3 px-3 text-center">Receipt</th>
+                    <th className="py-3 px-3 text-center">Status</th>
+                    <th className="py-3 px-3 text-center">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium">
+                  {filteredJanmashtamiExpenses.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="py-8 text-center text-slate-400">
+                        No Janmashtami festival expenses found matching current filter.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredJanmashtamiExpenses.map(exp => {
+                      const devotee = devotees.find(d => d.id === exp.devotee_id);
+                      return (
+                        <tr key={exp.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                          <td className="py-3 px-3 text-slate-500 font-mono">
+                            {exp.date || exp.created_at.slice(0, 10)}
+                          </td>
+                          <td className="py-3 px-3">
+                            <div className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                              <span>{exp.title}</span>
+                              <Badge variant="saffron" size="sm" className="text-[9px] px-1 py-0">Janmashtami</Badge>
+                            </div>
+                            {exp.comments && (
+                              <div className="text-[10px] text-slate-400">{exp.comments}</div>
+                            )}
+                            {exp.rejection_reason && (
+                              <div className="text-[10px] text-rose-500 font-semibold">
+                                Reason: {exp.rejection_reason}
+                              </div>
+                            )}
+                          </td>
+                          <td className="py-3 px-3">
+                            <div className="font-bold text-slate-800 dark:text-slate-200">
+                              {exp.payer_name}
+                            </div>
+                            <div className="text-[10px] text-slate-400">
+                              {devotee ? formatDevoteeName(devotee) : (exp.guest_name ? `Guest: ${exp.guest_name}` : '-')}
+                            </div>
+                          </td>
+                          <td className="py-3 px-3 text-right font-bold text-slate-900 dark:text-white font-mono">
+                            {formatRupee(exp.amount)}
+                          </td>
+                          <td className="py-3 px-3 text-center">
+                            {exp.bill_url ? (
+                              <a
+                                href={exp.bill_url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-amber-600 dark:text-amber-400 hover:underline font-bold inline-flex items-center gap-1"
+                              >
+                                <Eye className="w-3.5 h-3.5" />
+                                <span>View</span>
+                              </a>
+                            ) : (
+                              <span className="text-slate-400">-</span>
+                            )}
+                          </td>
+                          <td className="py-3 px-3 text-center">
+                            <Badge variant={exp.status === 'APPROVED' ? 'success' : 'danger'} size="sm">
+                              {exp.status}
+                            </Badge>
+                          </td>
+                          <td className="py-3 px-3 text-center">
+                            {exp.status === 'APPROVED' ? (
+                              <Button
+                                onClick={() => setRejectingExpense(exp)}
+                                variant="danger"
+                                size="sm"
+                                className="text-[10px] py-1 px-2.5"
+                              >
+                                Reject
+                              </Button>
+                            ) : (
+                              <Button
+                                onClick={() => reviewExpense(exp.id, 'APPROVED')}
+                                variant="secondary"
+                                size="sm"
+                                className="text-[10px] py-1 px-2.5 text-emerald-600 hover:bg-emerald-50"
+                              >
+                                Re-Approve
+                              </Button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
                 </tbody>
               </table>
             </div>
@@ -971,7 +1294,15 @@ export const AdminPage: React.FC = () => {
                             {formatRupee(s.approved_expenses)}
                           </td>
                           <td className="py-3 px-3 text-right font-mono">
-                            {formatRupee(s.carried_forward)}
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEditCarryForward(s)}
+                              className="inline-flex items-center gap-1 hover:underline text-slate-800 dark:text-slate-200 font-mono hover:text-amber-600 dark:hover:text-amber-400 group cursor-pointer"
+                              title="Click to adjust Carry Forward"
+                            >
+                              <span>{formatRupee(s.carried_forward)}</span>
+                              <Edit className="w-3 h-3 text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+                            </button>
                           </td>
                           <td className="py-3 px-3 text-right font-bold text-purple-600 dark:text-purple-400">
                             {formatRupee(s.settlement_reported)}
@@ -1777,6 +2108,51 @@ export const AdminPage: React.FC = () => {
             </Button>
             <Button type="submit" variant="saffron" className="flex-1">
               Save Devotee
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Carry Forward Adjustment Modal */}
+      <Modal
+        isOpen={Boolean(editingCarryForwardDevotee)}
+        onClose={() => setEditingCarryForwardDevotee(null)}
+        title={`Adjust Carry Forward: ${editingCarryForwardDevotee ? formatDevoteeName(editingCarryForwardDevotee.devotee) : ''}`}
+      >
+        <form onSubmit={handleSaveCarryForward} className="space-y-4">
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Set or adjust the opening Carry Forward balance for <strong>{formatMonthName(activeMonth)}</strong>. Positive amount means devotee owes previous balance; negative amount means surplus credit.
+          </p>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+              Carry Forward Amount (₹) *
+            </label>
+            <input
+              type="number"
+              step="any"
+              required
+              value={carryForwardAmountInput}
+              onChange={e => setCarryForwardAmountInput(e.target.value)}
+              className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white font-mono text-sm focus:ring-2 focus:ring-amber-500 outline-none"
+              placeholder="e.g. 1500 or -200"
+            />
+            <span className="text-[11px] text-slate-400 mt-1 block">
+              Default is calculated automatically from previous month's final balance.
+            </span>
+          </div>
+
+          <div className="flex gap-2 pt-3">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setEditingCarryForwardDevotee(null)}
+              className="flex-1"
+            >
+              Cancel
+            </Button>
+            <Button type="submit" variant="saffron" className="flex-1">
+              Save Carry Forward
             </Button>
           </div>
         </form>

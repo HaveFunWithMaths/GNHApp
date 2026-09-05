@@ -18,6 +18,7 @@ import {
   getCutoffCountdown,
   getCutoffFormattedDate,
   formatDevoteeName,
+  MIN_CYCLE_MONTH,
 } from '../../utils/calculations';
 import { formatDevoteeFamilyDisplay } from '../../utils/devoteeHelpers';
 
@@ -38,6 +39,7 @@ export const Navbar: React.FC = () => {
   } = useApp();
 
   const [countdown, setCountdown] = useState(() => getCutoffCountdown(activeMonth));
+  const isMinMonth = activeMonth <= MIN_CYCLE_MONTH;
 
   // Live countdown timer updater (ticks every second)
   useEffect(() => {
@@ -47,8 +49,9 @@ export const Navbar: React.FC = () => {
     return () => clearInterval(interval);
   }, [activeMonth]);
 
-  // Navigate month back/forward
+  // Navigate month back/forward (bounded by MIN_CYCLE_MONTH)
   const handlePrevMonth = () => {
+    if (isMinMonth) return;
     const [yearStr, monthStr] = activeMonth.split('-');
     let year = parseInt(yearStr, 10);
     let month = parseInt(monthStr, 10) - 1;
@@ -57,6 +60,7 @@ export const Navbar: React.FC = () => {
       year -= 1;
     }
     const newMonth = `${year}-${month.toString().padStart(2, '0')}`;
+    if (newMonth < MIN_CYCLE_MONTH) return;
     setActiveMonth(newMonth);
   };
 
@@ -114,8 +118,13 @@ export const Navbar: React.FC = () => {
           <div className="flex items-center bg-slate-100 dark:bg-slate-800/90 rounded-2xl p-1 border border-slate-200/60 dark:border-slate-700/60 shadow-inner">
             <button
               onClick={handlePrevMonth}
-              className="p-1.5 rounded-xl hover:bg-white dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors"
-              title="Previous Month"
+              disabled={isMinMonth}
+              className={`p-1.5 rounded-xl transition-colors ${
+                isMinMonth
+                  ? 'opacity-30 cursor-not-allowed text-slate-400 dark:text-slate-600'
+                  : 'hover:bg-white dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300'
+              }`}
+              title={isMinMonth ? "Minimum month is August 2026" : "Previous Month"}
             >
               <ChevronLeft className="w-4 h-4" />
             </button>
