@@ -5,6 +5,9 @@ import {
   Eye,
   Crown,
   Sparkles,
+  ExternalLink,
+  ArrowRight,
+  Wallet,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { Card } from '../components/common/Card';
@@ -28,7 +31,19 @@ export const JanmashtamiPage: React.FC = () => {
     expenses,
     submitExpense,
     showToast,
+    setActiveTab,
   } = useApp();
+
+  const handleNavigateToRegularExpenses = () => {
+    setActiveTab('prasadam');
+    window.location.hash = 'regular-expenses-section';
+    setTimeout(() => {
+      const el = document.getElementById('regular-expenses-section');
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }, 150);
+  };
 
   // Resolve default payer name helper (defaults single family member or logged in member)
   const getDefaultPayer = React.useCallback(() => {
@@ -474,6 +489,175 @@ export const JanmashtamiPage: React.FC = () => {
           </div>
         )}
       </Card>
+
+      {/* 4. Other Expenses Section */}
+      <div className="space-y-4 pt-2">
+        <div className="flex items-center gap-2.5">
+          <div className="p-2 rounded-xl bg-amber-500/15 text-amber-600 dark:text-amber-400">
+            <Wallet className="w-5 h-5" />
+          </div>
+          <div>
+            <h2 className="text-lg font-bold text-slate-900 dark:text-white">
+              Other Expenses
+            </h2>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Direct access to kitchen reimbursements, preaching outreach, and cultivation expense portals
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* Card 1: Regular GNH Expense */}
+          <div
+            onClick={handleNavigateToRegularExpenses}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                handleNavigateToRegularExpenses();
+              }
+            }}
+            className="group relative flex flex-col justify-between p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xs hover:shadow-md hover:border-amber-400 dark:hover:border-amber-500/50 transition-all cursor-pointer select-none"
+          >
+            <div>
+              <div className="flex items-start justify-between gap-2">
+                <div className="w-14 h-14 rounded-xl bg-amber-50/70 dark:bg-slate-800 border border-slate-200 dark:border-slate-700/80 p-1 flex items-center justify-center shrink-0 shadow-xs group-hover:scale-105 transition-transform">
+                  <img
+                    src="/GNHLogo.png"
+                    alt="GNH Logo"
+                    className="w-full h-full object-contain"
+                  />
+                </div>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200/60 dark:border-amber-800/60">
+                  2nd Tab
+                </span>
+              </div>
+
+              <div className="mt-4">
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors">
+                  Regular GNH Expense
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
+                  Submit daily kitchen groceries, vegetables, and store purchases to offset monthly prasadam.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-xs font-semibold text-amber-600 dark:text-amber-400">
+              <span>Go to Expenses</span>
+              <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+            </div>
+          </div>
+
+          {/* Card 2: ARJUNA Expenses */}
+          <a
+            href="https://tinyurl.com/AGTReimburse"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="group relative flex flex-col justify-between p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xs hover:shadow-md hover:border-blue-400 dark:hover:border-blue-500/50 transition-all"
+          >
+            <div>
+              <div className="flex items-start justify-between gap-2">
+                <div className="w-14 h-14 rounded-xl bg-blue-50/70 dark:bg-slate-800 border border-slate-200 dark:border-slate-700/80 p-1 flex items-center justify-center shrink-0 shadow-xs group-hover:scale-105 transition-transform overflow-hidden">
+                  <img
+                    src="/Arjuna_Logo.jpg"
+                    alt="ARJUNA Logo"
+                    className="w-full h-full object-contain rounded-lg"
+                  />
+                </div>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200/60 dark:border-blue-800/60">
+                  Reimbursement
+                </span>
+              </div>
+
+              <div className="mt-4">
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                  ARJUNA Expenses
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
+                  Submit ARJUNA devotee reimbursement and festival expenditure requests.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-xs font-semibold text-blue-600 dark:text-blue-400">
+              <span>Open ARJUNA Form</span>
+              <ExternalLink className="w-4 h-4 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
+            </div>
+          </a>
+
+          {/* Card 3: Preaching Expenses */}
+          <a
+            href="https://forms.gle/Aji5QpTAp5ToFP5z9"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="group relative flex flex-col justify-between p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xs hover:shadow-md hover:border-purple-400 dark:hover:border-purple-500/50 transition-all"
+          >
+            <div>
+              <div className="flex items-start justify-between gap-2">
+                <div className="w-14 h-14 rounded-xl bg-purple-50/70 dark:bg-slate-800 border border-slate-200 dark:border-slate-700/80 p-1 flex items-center justify-center shrink-0 shadow-xs group-hover:scale-105 transition-transform overflow-hidden">
+                  <img
+                    src="/VSTLogo.jpeg"
+                    alt="VST Preaching Logo"
+                    className="w-full h-full object-contain rounded-lg"
+                  />
+                </div>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 dark:bg-purple-950/60 dark:text-purple-300 border border-purple-200/60 dark:border-purple-800/60">
+                  Preaching
+                </span>
+              </div>
+
+              <div className="mt-4">
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white group-hover:text-purple-600 dark:group-hover:text-purple-400 transition-colors">
+                  Preaching Expenses
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
+                  Voice of Subconscious (VST) and outreach preaching programs expense claims.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-xs font-semibold text-purple-600 dark:text-purple-400">
+              <span>Open Preaching Form</span>
+              <ExternalLink className="w-4 h-4 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
+            </div>
+          </a>
+
+          {/* Card 4: Influential people cultivation */}
+          <a
+            href="https://forms.gle/batrkRmLYvYQQyfJ9"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="group relative flex flex-col justify-between p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xs hover:shadow-md hover:border-emerald-400 dark:hover:border-emerald-500/50 transition-all"
+          >
+            <div>
+              <div className="flex items-start justify-between gap-2">
+                <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-emerald-500 via-teal-600 to-emerald-700 text-white flex items-center justify-center shrink-0 shadow-sm shadow-emerald-500/20 group-hover:scale-105 transition-transform">
+                  <span className="font-black text-2xl tracking-tight leading-none select-none">$</span>
+                </div>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200/60 dark:border-emerald-800/60">
+                  Cultivation
+                </span>
+              </div>
+
+              <div className="mt-4">
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
+                  Influential People Cultivation
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
+                  VIP outreach, special devotee relationship cultivation, and seva gift reimbursements.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+              <span>Open Cultivation Form</span>
+              <ExternalLink className="w-4 h-4 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
+            </div>
+          </a>
+        </div>
+      </div>
 
       {/* Receipt Viewer Modal */}
       <Modal

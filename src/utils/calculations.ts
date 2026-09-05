@@ -237,6 +237,64 @@ export function calculateDevoteeMaxCounts(counts: PrasadamCount[]): {
   };
 }
 
+export const MIN_CYCLE_MONTH = '2026-08';
+
+/**
+ * Get all calendar cycle months between startMonth and endMonth inclusive ('YYYY-MM')
+ */
+export function getMonthsBetween(startMonth: string, endMonth: string): string[] {
+  const validStart = startMonth < MIN_CYCLE_MONTH ? MIN_CYCLE_MONTH : startMonth;
+  const validEnd = endMonth < validStart ? validStart : endMonth;
+
+  const months: string[] = [];
+  const [startYear, startM] = validStart.split('-').map(Number);
+  const [endYear, endM] = validEnd.split('-').map(Number);
+
+  let curYear = startYear;
+  let curMonth = startM;
+
+  while (curYear < endYear || (curYear === endYear && curMonth <= endM)) {
+    months.push(`${curYear}-${curMonth.toString().padStart(2, '0')}`);
+    curMonth++;
+    if (curMonth > 12) {
+      curMonth = 1;
+      curYear++;
+    }
+  }
+
+  return months.length > 0 ? months : [MIN_CYCLE_MONTH];
+}
+
+/**
+ * Get previous cycle month with minimum boundary clamp
+ */
+export function getPreviousCycleMonth(cycleMonth: string): string {
+  if (cycleMonth <= MIN_CYCLE_MONTH) return MIN_CYCLE_MONTH;
+  const [yearStr, monthStr] = cycleMonth.split('-');
+  let year = parseInt(yearStr, 10);
+  let month = parseInt(monthStr, 10) - 1;
+  if (month < 1) {
+    month = 12;
+    year -= 1;
+  }
+  const prev = `${year}-${month.toString().padStart(2, '0')}`;
+  return prev < MIN_CYCLE_MONTH ? MIN_CYCLE_MONTH : prev;
+}
+
+/**
+ * Get next cycle month
+ */
+export function getNextCycleMonth(cycleMonth: string): string {
+  const [yearStr, monthStr] = cycleMonth.split('-');
+  let year = parseInt(yearStr, 10);
+  let month = parseInt(monthStr, 10) + 1;
+  if (month > 12) {
+    month = 1;
+    year += 1;
+  }
+  return `${year}-${month.toString().padStart(2, '0')}`;
+}
+
 /**
  * Computes full summary for a single devotee for the active month
  */
@@ -247,7 +305,8 @@ export function computeDevoteeMonthlySummary(
   allExpenses: Expense[],
   ledger?: MonthlyLedger | null,
   communityCostPerMember: number = DEFAULT_COMMUNITY_COST_PER_MEMBER,
-  now: Date = new Date()
+  now: Date = new Date(),
+  overrideCarriedForward?: number
 ): DevoteeMonthlySummary {
   const devoteeCounts = allCounts.filter(
     c => c.devotee_id === devotee.id && c.date.startsWith(cycleMonth)
@@ -298,23 +357,23 @@ export function computeDevoteeMonthlySummary(
   const friendMembers = getFriendMembers(devotee);
   const friends_summaries: FriendSummary[] = friendMembers.map(friend => {
     const friendCounts = friend.monthly_counts?.[cycleMonth] || { breakfast: 0, lunch: 0, dinner: 0 };
-    const fB = Math.max(0, friendCounts.breakfast || 0);
-    const fL = Math.max(0, friendCounts.lunch || 0);
-    const fD = Math.max(0, friendCounts.dinner || 0);
-    const fTotalMeals = fB + fL + fD;
-    const fMealsCost = calculateMealsCost(fB, fL, fD);
-    const fCommCost = typeof friend.community_cost === 'number' ? friend.community_cost : defaultGroupCost;
-    const fTotalCost = fMealsCost + fCommCost;
+    const b = friendCounts.breakfast || 0;
+    const l = friendCounts.lunch || 0;
+    const d = friendCounts.dinner || 0;
+    const fMeals = b + l + d;
+    const fMealsCost = calculateMealsCost(b, l, d);
+    const fCommunityCost = typeof friend.community_cost === 'number' ? friend.community_cost : defaultGroupCost;
+    const fTotalCost = fMealsCost + fCommunityCost;
 
     return {
       name: friend.name,
       phone_number: friend.phone_number,
-      breakfast_total: fB,
-      lunch_total: fL,
-      dinner_total: fD,
-      total_meals: fTotalMeals,
+      breakfast_total: b,
+      lunch_total: l,
+      dinner_total: d,
+      total_meals: fMeals,
       meals_cost: fMealsCost,
-      community_cost: fCommCost,
+      community_cost: fCommunityCost,
       total_cost: fTotalCost,
     };
   });
@@ -346,7 +405,9 @@ export function computeDevoteeMonthlySummary(
     .reduce((sum, e) => sum + Number(e.amount), 0);
 
   const current_month_net = prasadam_cost - approved_expenses;
-  const carried_forward = ledger ? Number(ledger.carried_forward_amount || 0) : 0;
+  const carried_forward = overrideCarriedForward !== undefined
+    ? Number(overrideCarriedForward || 0)
+    : (ledger ? Number(ledger.carried_forward_amount || 0) : 0);
   const settlement_reported = ledger && (ledger.settlement_status === 'SETTLED' || ledger.settlement_status === 'PENDING_VERIFICATION')
     ? Number(ledger.settlement_amount_reported || 0)
     : 0;
@@ -393,6 +454,65 @@ export function computeDevoteeMonthlySummary(
 }
 
 /**
+ * Computes devotee monthly summary chaining carry forward recursively from MIN_CYCLE_MONTH to activeMonth
+ */
+export function computeDevoteeMonthlySummaryWithCarryForward(
+  devotee: Devotee,
+  activeMonth: string,
+  allCounts: PrasadamCount[],
+  allExpenses: Expense[],
+  allLedgers: MonthlyLedger[],
+  communityCostPerMember: number = DEFAULT_COMMUNITY_COST_PER_MEMBER,
+  now: Date = new Date()
+): DevoteeMonthlySummary {
+  const targetMonth = activeMonth < MIN_CYCLE_MONTH ? MIN_CYCLE_MONTH : activeMonth;
+  const months = getMonthsBetween(MIN_CYCLE_MONTH, targetMonth);
+  let runningCarryForward = 0;
+  let activeMonthSummary: DevoteeMonthlySummary | null = null;
+
+  for (const m of months) {
+    const monthLedger = allLedgers.find(l => l.devotee_id === devotee.id && l.cycle_month === m);
+    
+    // For MIN_CYCLE_MONTH, opening balance can come from existing ledger if set
+    // For subsequent months, check if ledger has a manual override note, otherwise roll forward runningCarryForward
+    const isManualOverride = Boolean(monthLedger?.admin_notes && monthLedger.admin_notes.includes('[OVERRIDE_CF]'));
+    const carriedForwardForMonth = (m === MIN_CYCLE_MONTH)
+      ? Number(monthLedger?.carried_forward_amount || 0)
+      : (isManualOverride
+        ? Number(monthLedger?.carried_forward_amount || 0)
+        : runningCarryForward);
+
+    const summary = computeDevoteeMonthlySummary(
+      devotee,
+      m,
+      allCounts,
+      allExpenses,
+      monthLedger,
+      communityCostPerMember,
+      now,
+      carriedForwardForMonth
+    );
+
+    // The ending final balance rolls forward as the next month's starting carry forward
+    runningCarryForward = summary.final_balance;
+
+    if (m === targetMonth) {
+      activeMonthSummary = summary;
+    }
+  }
+
+  return activeMonthSummary || computeDevoteeMonthlySummary(
+    devotee,
+    targetMonth,
+    allCounts,
+    allExpenses,
+    allLedgers.find(l => l.devotee_id === devotee.id && l.cycle_month === targetMonth),
+    communityCostPerMember,
+    now
+  );
+}
+
+/**
  * Format currency with Indian rupee symbol
  */
 export function formatRupee(amount: number): string {
@@ -419,13 +539,14 @@ export function formatMonthName(cycleMonth: string): string {
 }
 
 /**
- * Get current cycle month formatted 'YYYY-MM'
+ * Get current cycle month formatted 'YYYY-MM', bounded by MIN_CYCLE_MONTH
  */
 export function getCurrentCycleMonth(): string {
   const now = new Date();
   const yyyy = now.getFullYear();
   const mm = (now.getMonth() + 1).toString().padStart(2, '0');
-  return `${yyyy}-${mm}`;
+  const current = `${yyyy}-${mm}`;
+  return current < MIN_CYCLE_MONTH ? MIN_CYCLE_MONTH : current;
 }
 
 /**

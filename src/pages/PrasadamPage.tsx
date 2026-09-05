@@ -1,10 +1,8 @@
-import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   Utensils,
   Plus,
   Minus,
-  Check,
-  Loader2,
   Lock,
   Upload,
   Receipt,
@@ -99,16 +97,10 @@ export const PrasadamPage: React.FC = () => {
   const [bCount, setBCount] = useState<number>(0);
   const [lCount, setLCount] = useState<number>(0);
   const [dCount, setDCount] = useState<number>(0);
-  const [autosaveStatus, setAutosaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [isManualSaving, setIsManualSaving] = useState(false);
-
-  // Track if current state change was user-initiated
-  const isUserInputRef = useRef(false);
-  const autosaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Sync state when activeDevotee, activeMonth, or activeParticipantTab changes
   useEffect(() => {
-    isUserInputRef.current = false;
     if (activeParticipantTab.startsWith('friend:')) {
       setBCount(friendTotals.b);
       setLCount(friendTotals.l);
@@ -118,7 +110,6 @@ export const PrasadamPage: React.FC = () => {
       setLCount(familyTotals.l);
       setDCount(familyTotals.d);
     }
-    setAutosaveStatus('idle');
   }, [
     activeParticipantTab,
     familyTotals.b,
@@ -131,67 +122,22 @@ export const PrasadamPage: React.FC = () => {
     activeDevotee?.id,
   ]);
 
-  // Reactive Debounced Autosave
+  // Scroll to regular expenses section if hash matches or if navigated from another page
   useEffect(() => {
-    if (!isUserInputRef.current || !activeDevotee) return;
-
-    setAutosaveStatus('saving');
-    if (autosaveTimeoutRef.current) {
-      clearTimeout(autosaveTimeoutRef.current);
-    }
-
-    autosaveTimeoutRef.current = setTimeout(async () => {
-      try {
-        if (activeParticipantTab.startsWith('friend:') && selectedFriend) {
-          await updateFriendMonthlyCounts(
-            activeDevotee.id,
-            selectedFriend.name,
-            activeMonth,
-            bCount,
-            lCount,
-            dCount,
-            { silent: true }
-          );
-        } else {
-          await updateMonthlyMealCounts(
-            activeDevotee.id,
-            activeMonth,
-            bCount,
-            lCount,
-            dCount,
-            { silent: true }
-          );
+    if (window.location.hash === '#regular-expenses-section') {
+      const timer = setTimeout(() => {
+        const el = document.getElementById('regular-expenses-section');
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
-        setAutosaveStatus('saved');
-      } catch (err) {
-        console.error('Autosave error:', err);
-        setAutosaveStatus('idle');
-      }
-    }, 400);
-
-    return () => {
-      if (autosaveTimeoutRef.current) {
-        clearTimeout(autosaveTimeoutRef.current);
-      }
-    };
-  }, [
-    bCount,
-    lCount,
-    dCount,
-    activeParticipantTab,
-    selectedFriend,
-    activeDevotee,
-    activeMonth,
-    updateMonthlyMealCounts,
-    updateFriendMonthlyCounts,
-  ]);
+      }, 150);
+      return () => clearTimeout(timer);
+    }
+  }, []);
 
   // Direct manual save action
   const handleSaveCounts = async () => {
     if (!activeDevotee) return;
-    if (autosaveTimeoutRef.current) {
-      clearTimeout(autosaveTimeoutRef.current);
-    }
     setIsManualSaving(true);
     try {
       if (activeParticipantTab.startsWith('friend:') && selectedFriend) {
@@ -214,7 +160,6 @@ export const PrasadamPage: React.FC = () => {
           { silent: false }
         );
       }
-      setAutosaveStatus('saved');
     } catch (err) {
       console.error('Error saving counts:', err);
       showToast({
@@ -229,19 +174,16 @@ export const PrasadamPage: React.FC = () => {
 
   // Handle direct value changes
   const handleUpdateB = (val: number) => {
-    isUserInputRef.current = true;
     const clamped = Math.max(0, val);
     setBCount(clamped);
   };
 
   const handleUpdateL = (val: number) => {
-    isUserInputRef.current = true;
     const clamped = Math.max(0, val);
     setLCount(clamped);
   };
 
   const handleUpdateD = (val: number) => {
-    isUserInputRef.current = true;
     const clamped = Math.max(0, val);
     setDCount(clamped);
   };
@@ -468,24 +410,12 @@ export const PrasadamPage: React.FC = () => {
                   <Badge variant="saffron" size="sm">Direct Input</Badge>
                 </div>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  Enter monthly Breakfast, Lunch, and Dinner counts. You can save counts anytime or let them autosave.
+                  Enter monthly Breakfast, Lunch, and Dinner counts, then click Save below.
                 </p>
               </div>
             </div>
 
             <div className="flex items-center gap-2.5 flex-wrap">
-              {autosaveStatus === 'saving' ? (
-                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 animate-pulse">
-                  <Loader2 className="w-3 h-3 animate-spin" />
-                  <span>Autosaving...</span>
-                </span>
-              ) : autosaveStatus === 'saved' ? (
-                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-                  <Check className="w-3 h-3" />
-                  <span>Saved ✓</span>
-                </span>
-              ) : null}
-
               {isCutoff ? (
                 <Badge variant="danger" size="sm">
                   <Lock className="w-3 h-3" />
@@ -496,18 +426,6 @@ export const PrasadamPage: React.FC = () => {
                   <span>Entry Open</span>
                 </Badge>
               )}
-
-              <Button
-                type="button"
-                variant="saffron"
-                size="sm"
-                isLoading={isManualSaving}
-                onClick={handleSaveCounts}
-                className="font-bold shadow-xs hover:shadow-md"
-              >
-                <Save className="w-3.5 h-3.5 mr-1" />
-                <span>Save</span>
-              </Button>
             </div>
           </div>
 
@@ -562,26 +480,26 @@ export const PrasadamPage: React.FC = () => {
             </div>
           )}
 
-          {/* 3 Interactive Slot Input Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-5">
+          {/* 3 Compact Interactive Slot Input Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-3.5">
             {/* 1. Breakfast Slot */}
-            <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-slate-800/90 border-2 border-slate-200 dark:border-slate-700/80 shadow-xs flex flex-col justify-between">
+            <div className="p-3 sm:p-3.5 rounded-xl bg-white dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700 shadow-xs flex flex-col justify-between">
               <div>
-                <div className="flex items-center justify-between text-slate-600 dark:text-slate-300 text-xs font-bold mb-1">
+                <div className="flex items-center justify-between text-slate-700 dark:text-slate-200 text-xs font-bold mb-2">
                   <span>Total Breakfasts</span>
-                  <span className="text-[11px] font-mono text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/60 px-2 py-0.5 rounded-md">
+                  <span className="text-[10px] font-mono font-semibold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/60 px-1.5 py-0.5 rounded">
                     ₹40 / plate
                   </span>
                 </div>
 
-                <div className="flex items-center justify-between gap-3 mt-3">
+                <div className="flex items-center justify-between gap-2">
                   <button
                     type="button"
                     disabled={bCount <= 0}
                     onClick={() => handleUpdateB(bCount - 1)}
-                    className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-black flex items-center justify-center hover:bg-slate-200 dark:hover:bg-slate-600 disabled:opacity-30 transition-colors shadow-xs"
+                    className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold flex items-center justify-center hover:bg-slate-200 dark:hover:bg-slate-600 disabled:opacity-30 transition-colors"
                   >
-                    <Minus className="w-4 h-4" />
+                    <Minus className="w-3.5 h-3.5" />
                   </button>
 
                   <div className="flex-1 text-center">
@@ -592,47 +510,47 @@ export const PrasadamPage: React.FC = () => {
                       value={bCount === 0 ? '' : bCount}
                       placeholder="0"
                       onChange={e => handleUpdateB(parseInt(e.target.value) || 0)}
-                      className="w-full text-center text-3xl font-black bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl py-1.5 text-slate-900 dark:text-white focus:ring-2 focus:ring-amber-500 outline-none"
+                      className="w-full text-center text-2xl font-extrabold bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg py-1 text-slate-900 dark:text-white focus:ring-2 focus:ring-amber-500 outline-none"
                     />
-                    <span className="text-[11px] text-slate-400 block mt-1">plates this month</span>
+                    <span className="text-[10px] text-slate-400 block mt-0.5">plates</span>
                   </div>
 
                   <button
                     type="button"
                     onClick={() => handleUpdateB(bCount + 1)}
-                    className="w-10 h-10 rounded-xl bg-amber-500 text-slate-950 font-black flex items-center justify-center hover:bg-amber-400 transition-colors shadow-xs"
+                    className="w-8 h-8 rounded-lg bg-amber-500 text-slate-950 font-bold flex items-center justify-center hover:bg-amber-400 transition-colors"
                   >
-                    <Plus className="w-4 h-4" />
+                    <Plus className="w-3.5 h-3.5" />
                   </button>
                 </div>
               </div>
 
-              <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-700/60 flex items-center justify-between text-xs">
+              <div className="mt-2.5 pt-2 border-t border-slate-100 dark:border-slate-700/60 flex items-center justify-between text-xs">
                 <span className="text-slate-500 dark:text-slate-400 font-medium">Breakfast Cost:</span>
-                <span className="font-extrabold text-sm text-amber-600 dark:text-amber-400 font-mono">
+                <span className="font-bold text-xs text-amber-600 dark:text-amber-400 font-mono">
                   {formatRupee(bCost)}
                 </span>
               </div>
             </div>
 
             {/* 2. Lunch Slot */}
-            <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-slate-800/90 border-2 border-slate-200 dark:border-slate-700/80 shadow-xs flex flex-col justify-between">
+            <div className="p-3 sm:p-3.5 rounded-xl bg-white dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700 shadow-xs flex flex-col justify-between">
               <div>
-                <div className="flex items-center justify-between text-slate-600 dark:text-slate-300 text-xs font-bold mb-1">
+                <div className="flex items-center justify-between text-slate-700 dark:text-slate-200 text-xs font-bold mb-2">
                   <span>Total Lunches</span>
-                  <span className="text-[11px] font-mono text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/60 px-2 py-0.5 rounded-md">
+                  <span className="text-[10px] font-mono font-semibold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/60 px-1.5 py-0.5 rounded">
                     ₹80 / plate
                   </span>
                 </div>
 
-                <div className="flex items-center justify-between gap-3 mt-3">
+                <div className="flex items-center justify-between gap-2">
                   <button
                     type="button"
                     disabled={lCount <= 0}
                     onClick={() => handleUpdateL(lCount - 1)}
-                    className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-black flex items-center justify-center hover:bg-slate-200 dark:hover:bg-slate-600 disabled:opacity-30 transition-colors shadow-xs"
+                    className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold flex items-center justify-center hover:bg-slate-200 dark:hover:bg-slate-600 disabled:opacity-30 transition-colors"
                   >
-                    <Minus className="w-4 h-4" />
+                    <Minus className="w-3.5 h-3.5" />
                   </button>
 
                   <div className="flex-1 text-center">
@@ -643,47 +561,47 @@ export const PrasadamPage: React.FC = () => {
                       value={lCount === 0 ? '' : lCount}
                       placeholder="0"
                       onChange={e => handleUpdateL(parseInt(e.target.value) || 0)}
-                      className="w-full text-center text-3xl font-black bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl py-1.5 text-slate-900 dark:text-white focus:ring-2 focus:ring-amber-500 outline-none"
+                      className="w-full text-center text-2xl font-extrabold bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg py-1 text-slate-900 dark:text-white focus:ring-2 focus:ring-amber-500 outline-none"
                     />
-                    <span className="text-[11px] text-slate-400 block mt-1">plates this month</span>
+                    <span className="text-[10px] text-slate-400 block mt-0.5">plates</span>
                   </div>
 
                   <button
                     type="button"
                     onClick={() => handleUpdateL(lCount + 1)}
-                    className="w-10 h-10 rounded-xl bg-amber-500 text-slate-950 font-black flex items-center justify-center hover:bg-amber-400 transition-colors shadow-xs"
+                    className="w-8 h-8 rounded-lg bg-amber-500 text-slate-950 font-bold flex items-center justify-center hover:bg-amber-400 transition-colors"
                   >
-                    <Plus className="w-4 h-4" />
+                    <Plus className="w-3.5 h-3.5" />
                   </button>
                 </div>
               </div>
 
-              <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-700/60 flex items-center justify-between text-xs">
+              <div className="mt-2.5 pt-2 border-t border-slate-100 dark:border-slate-700/60 flex items-center justify-between text-xs">
                 <span className="text-slate-500 dark:text-slate-400 font-medium">Lunch Cost:</span>
-                <span className="font-extrabold text-sm text-amber-600 dark:text-amber-400 font-mono">
+                <span className="font-bold text-xs text-amber-600 dark:text-amber-400 font-mono">
                   {formatRupee(lCost)}
                 </span>
               </div>
             </div>
 
             {/* 3. Dinner Slot */}
-            <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-slate-800/90 border-2 border-slate-200 dark:border-slate-700/80 shadow-xs flex flex-col justify-between">
+            <div className="p-3 sm:p-3.5 rounded-xl bg-white dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700 shadow-xs flex flex-col justify-between">
               <div>
-                <div className="flex items-center justify-between text-slate-600 dark:text-slate-300 text-xs font-bold mb-1">
+                <div className="flex items-center justify-between text-slate-700 dark:text-slate-200 text-xs font-bold mb-2">
                   <span>Total Dinners</span>
-                  <span className="text-[11px] font-mono text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/60 px-2 py-0.5 rounded-md">
+                  <span className="text-[10px] font-mono font-semibold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/60 px-1.5 py-0.5 rounded">
                     ₹40 / plate
                   </span>
                 </div>
 
-                <div className="flex items-center justify-between gap-3 mt-3">
+                <div className="flex items-center justify-between gap-2">
                   <button
                     type="button"
                     disabled={dCount <= 0}
                     onClick={() => handleUpdateD(dCount - 1)}
-                    className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-black flex items-center justify-center hover:bg-slate-200 dark:hover:bg-slate-600 disabled:opacity-30 transition-colors shadow-xs"
+                    className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold flex items-center justify-center hover:bg-slate-200 dark:hover:bg-slate-600 disabled:opacity-30 transition-colors"
                   >
-                    <Minus className="w-4 h-4" />
+                    <Minus className="w-3.5 h-3.5" />
                   </button>
 
                   <div className="flex-1 text-center">
@@ -694,24 +612,24 @@ export const PrasadamPage: React.FC = () => {
                       value={dCount === 0 ? '' : dCount}
                       placeholder="0"
                       onChange={e => handleUpdateD(parseInt(e.target.value) || 0)}
-                      className="w-full text-center text-3xl font-black bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl py-1.5 text-slate-900 dark:text-white focus:ring-2 focus:ring-amber-500 outline-none"
+                      className="w-full text-center text-2xl font-extrabold bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg py-1 text-slate-900 dark:text-white focus:ring-2 focus:ring-amber-500 outline-none"
                     />
-                    <span className="text-[11px] text-slate-400 block mt-1">plates this month</span>
+                    <span className="text-[10px] text-slate-400 block mt-0.5">plates</span>
                   </div>
 
                   <button
                     type="button"
                     onClick={() => handleUpdateD(dCount + 1)}
-                    className="w-10 h-10 rounded-xl bg-amber-500 text-slate-950 font-black flex items-center justify-center hover:bg-amber-400 transition-colors shadow-xs"
+                    className="w-8 h-8 rounded-lg bg-amber-500 text-slate-950 font-bold flex items-center justify-center hover:bg-amber-400 transition-colors"
                   >
-                    <Plus className="w-4 h-4" />
+                    <Plus className="w-3.5 h-3.5" />
                   </button>
                 </div>
               </div>
 
-              <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-700/60 flex items-center justify-between text-xs">
+              <div className="mt-2.5 pt-2 border-t border-slate-100 dark:border-slate-700/60 flex items-center justify-between text-xs">
                 <span className="text-slate-500 dark:text-slate-400 font-medium">Dinner Cost:</span>
-                <span className="font-extrabold text-sm text-amber-600 dark:text-amber-400 font-mono">
+                <span className="font-bold text-xs text-amber-600 dark:text-amber-400 font-mono">
                   {formatRupee(dCost)}
                 </span>
               </div>
@@ -754,19 +672,7 @@ export const PrasadamPage: React.FC = () => {
               </div>
             )}
 
-            <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
-              <div className="text-xs text-slate-500 dark:text-slate-400">
-                {autosaveStatus === 'saving' ? (
-                  <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400 font-medium">
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" /> Saving...
-                  </span>
-                ) : autosaveStatus === 'saved' ? (
-                  <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-medium">
-                    <Check className="w-3.5 h-3.5" /> Autosaved
-                  </span>
-                ) : null}
-              </div>
-
+            <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
               <Button
                 type="button"
                 variant="saffron"
@@ -784,7 +690,7 @@ export const PrasadamPage: React.FC = () => {
       </Card>
 
       {/* 2. REGULAR EXPENSE SUBMISSION FORM */}
-      <Card className="p-5 sm:p-6 border border-slate-200 dark:border-slate-800 shadow-md">
+      <Card id="regular-expenses-section" className="p-5 sm:p-6 border border-slate-200 dark:border-slate-800 shadow-md scroll-mt-20">
         <div className="flex items-center gap-3 mb-4">
           <div className="p-2.5 rounded-2xl bg-amber-500/15 text-amber-600 dark:text-amber-400">
             <Receipt className="w-5 h-5" />

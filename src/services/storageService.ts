@@ -560,18 +560,23 @@ class StorageService {
   }
 
   // --- MONTHLY LEDGERS & SETTLEMENTS ---
-  async getMonthlyLedgers(cycleMonth: string): Promise<MonthlyLedger[]> {
+  async getMonthlyLedgers(cycleMonth?: string): Promise<MonthlyLedger[]> {
     if (isSupabaseConfigured() && supabase) {
       try {
-        const { data, error } = await supabase
-          .from('monthly_ledgers')
-          .select('*')
-          .eq('cycle_month', cycleMonth);
+        let query = supabase.from('monthly_ledgers').select('*');
+        if (cycleMonth) {
+          query = query.eq('cycle_month', cycleMonth);
+        }
+        const { data, error } = await query;
         if (!error && data) {
           const raw = localStorage.getItem(STORAGE_KEYS.MONTHLY_LEDGERS);
           const allLedgers: MonthlyLedger[] = raw ? JSON.parse(raw) : [];
-          const otherMonths = allLedgers.filter(l => l.cycle_month !== cycleMonth);
-          localStorage.setItem(STORAGE_KEYS.MONTHLY_LEDGERS, JSON.stringify([...otherMonths, ...data]));
+          if (cycleMonth) {
+            const otherMonths = allLedgers.filter(l => l.cycle_month !== cycleMonth);
+            localStorage.setItem(STORAGE_KEYS.MONTHLY_LEDGERS, JSON.stringify([...otherMonths, ...data]));
+          } else {
+            localStorage.setItem(STORAGE_KEYS.MONTHLY_LEDGERS, JSON.stringify(data));
+          }
           return data as MonthlyLedger[];
         }
       } catch (err) {
@@ -581,7 +586,29 @@ class StorageService {
 
     const raw = localStorage.getItem(STORAGE_KEYS.MONTHLY_LEDGERS);
     const ledgers: MonthlyLedger[] = raw ? JSON.parse(raw) : [];
-    return ledgers.filter(l => l.cycle_month === cycleMonth);
+    if (cycleMonth) {
+      return ledgers.filter(l => l.cycle_month === cycleMonth);
+    }
+    return ledgers;
+  }
+
+  /**
+   * Save manual carry forward amount for a devotee in a cycle month
+   */
+  async saveDevoteeCarryForward(devoteeId: string, cycleMonth: string, amount: number): Promise<MonthlyLedger> {
+    const ledgers = await this.getMonthlyLedgers(cycleMonth);
+    const existing = ledgers.find(l => l.devotee_id === devoteeId);
+    const updated: MonthlyLedger = {
+      id: existing?.id,
+      devotee_id: devoteeId,
+      cycle_month: cycleMonth,
+      carried_forward_amount: Number(amount || 0),
+      settlement_amount_reported: existing ? existing.settlement_amount_reported : 0,
+      settlement_date_reported: existing ? existing.settlement_date_reported : null,
+      settlement_status: existing ? existing.settlement_status : 'UNSETTLED',
+      admin_notes: '[OVERRIDE_CF] Manually adjusted by Admin',
+    };
+    return await this.saveMonthlyLedger(updated);
   }
 
   async saveMonthlyLedger(ledger: MonthlyLedger): Promise<MonthlyLedger> {
