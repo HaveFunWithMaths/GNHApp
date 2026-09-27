@@ -439,10 +439,10 @@ export function computeDevoteeMonthlySummary(
   const community_cost = family_community_cost + friends_community_cost;
   const prasadam_cost = family_prasadam_cost + friends_total_cost;
 
-  // Filter regular expenses for this devotee and cycle month
+  // Filter regular expenses for this devotee and cycle month (based on month submitted)
   const devoteeRegularExpenses = allExpenses.filter(
     e => e.devotee_id === devotee.id &&
-      (e.cycle_month === cycleMonth || (e.date && e.date.startsWith(cycleMonth))) &&
+      getExpenseSubmissionMonth(e) === cycleMonth &&
       e.type === 'REGULAR'
   );
 
@@ -458,7 +458,7 @@ export function computeDevoteeMonthlySummary(
     .filter(e => e.status === 'REJECTED')
     .reduce((sum, e) => sum + Number(e.amount), 0);
 
-  const has_pending_expenses = pending_expenses > 0;
+  const has_pending_expenses = pending_expenses !== 0;
 
   // As far as pending calculations are concerned, assumed that they are approved:
   const assumed_approved_expenses = approved_only + pending_expenses;
@@ -615,6 +615,23 @@ export function getCurrentCycleMonth(): string {
   const mm = (now.getMonth() + 1).toString().padStart(2, '0');
   const current = `${yyyy}-${mm}`;
   return current < MIN_CYCLE_MONTH ? MIN_CYCLE_MONTH : current;
+}
+
+/**
+ * Returns the month an expense falls under: the month it was submitted.
+ * Prioritizes created_at (submission timestamp), then cycle_month, falling back to date.
+ */
+export function getExpenseSubmissionMonth(expense: { created_at?: string; cycle_month?: string; date?: string }): string {
+  if (expense.created_at) {
+    return expense.created_at.slice(0, 7);
+  }
+  if (expense.cycle_month) {
+    return expense.cycle_month;
+  }
+  if (expense.date) {
+    return expense.date.slice(0, 7);
+  }
+  return getCurrentCycleMonth();
 }
 
 /**

@@ -32,9 +32,11 @@ import {
   PRASADAM_RATES,
   formatExpenseDate,
   formatSubmissionDateTime,
+  getExpenseSubmissionMonth,
 } from '../utils/calculations';
 import { formatDevoteeFamilyDisplay } from '../utils/devoteeHelpers';
 import { Expense } from '../types';
+import { SignedAmountInput } from '../components/common/SignedAmountInput';
 
 export const ReportsPage: React.FC = () => {
   const {
@@ -60,9 +62,9 @@ export const ReportsPage: React.FC = () => {
 
   const handleOpenSettleModal = () => {
     if (summary) {
-      if (summary.settlement_reported > 0) {
+      if (summary.settlement_reported !== 0) {
         setSettleAmount(summary.settlement_reported.toString());
-      } else if (summary.final_balance > 0) {
+      } else if (summary.final_balance !== 0) {
         setSettleAmount(summary.final_balance.toString());
       } else {
         setSettleAmount('');
@@ -75,7 +77,9 @@ export const ReportsPage: React.FC = () => {
   const handleSettleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const amountNum = parseFloat(settleAmount);
-    if (isNaN(amountNum) || amountNum < 0) return;
+    if (isNaN(amountNum) || amountNum === 0) {
+      return;
+    }
 
     setIsSubmitting(true);
     try {
@@ -127,7 +131,7 @@ export const ReportsPage: React.FC = () => {
   const devoteeExpenses: Expense[] = expenses.filter(
     (e: Expense) =>
       (activeDevotee ? e.devotee_id === activeDevotee.id : (guestName ? e.guest_name === guestName : true)) &&
-      (e.cycle_month === activeMonth || (e.date && e.date.startsWith(activeMonth)) || e.type === 'JANMASHTAMI' || e.type === 'PRABHUPADA_APPEARANCE')
+      (getExpenseSubmissionMonth(e) === activeMonth || e.type === 'JANMASHTAMI' || e.type === 'PRABHUPADA_APPEARANCE')
   );
 
   const regularExpenses: Expense[] = devoteeExpenses.filter((e: Expense) => e.type === 'REGULAR');
@@ -272,7 +276,11 @@ export const ReportsPage: React.FC = () => {
                 <Receipt className="w-4 h-4 text-emerald-500" />
               </div>
               <div className="text-xl font-bold text-emerald-600 dark:text-emerald-400">
-                {summary.approved_expenses > 0 ? `- ${formatRupee(summary.approved_expenses)}` : '₹0'}
+                {summary.approved_expenses !== 0
+                  ? (summary.approved_expenses > 0
+                      ? `- ${formatRupee(summary.approved_expenses)}`
+                      : `+ ${formatRupee(Math.abs(summary.approved_expenses))}`)
+                  : '₹0'}
                 {summary.has_pending_expenses && '*'}
               </div>
               <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
@@ -481,7 +489,7 @@ export const ReportsPage: React.FC = () => {
                   <CheckCircle2 className="w-4 h-4 mr-1 text-emerald-500" />
                   <span>Settled ({formatRupee(summary.settlement_reported)}) • Update</span>
                 </Button>
-              ) : summary.final_balance > 0 ? (
+              ) : summary.final_balance !== 0 ? (
                 <Button
                   onClick={handleOpenSettleModal}
                   variant="saffron"
@@ -667,13 +675,11 @@ export const ReportsPage: React.FC = () => {
             <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1.5">
               Amount Given / Transferred (₹)
             </label>
-            <input
-              type="number"
-              step="0.01"
-              required
+            <SignedAmountInput
               value={settleAmount}
-              onChange={e => setSettleAmount(e.target.value)}
-              className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white font-semibold text-lg focus:ring-2 focus:ring-amber-500 outline-none"
+              onChange={setSettleAmount}
+              required
+              placeholder="0.00"
             />
           </div>
 

@@ -29,6 +29,7 @@ import { compressImage } from '../utils/imageCompressor';
 import { storageService } from '../services/storageService';
 import { parseReceiptUrls, formatReceiptUrls } from '../utils/receiptHelpers';
 import { Expense } from '../types';
+import { SignedAmountInput } from '../components/common/SignedAmountInput';
 
 export const AppearanceDayPage: React.FC = () => {
   const {
@@ -268,8 +269,8 @@ export const AppearanceDayPage: React.FC = () => {
       return;
     }
 
-    if (isNaN(amountNum) || amountNum <= 0) {
-      showToast({ type: 'warning', title: 'Invalid Amount', message: 'Please enter a valid expense amount.' });
+    if (isNaN(amountNum) || amountNum === 0) {
+      showToast({ type: 'warning', title: 'Invalid Amount', message: 'Please enter a valid non-zero expense amount.' });
       return;
     }
 
@@ -299,12 +300,13 @@ export const AppearanceDayPage: React.FC = () => {
       }
 
       const formattedBillUrl = formatReceiptUrls(uploadedUrls);
+      const submissionMonth = new Date().toISOString().slice(0, 7);
 
       await submitExpense({
         devotee_id: activeDevotee?.id || null,
         guest_name: !activeDevotee ? guestName || resolvedPayer || 'Anonymous Devotee' : null,
         date: expenseDate,
-        cycle_month: expenseDate ? expenseDate.slice(0, 7) : activeMonth,
+        cycle_month: submissionMonth,
         type: 'PRABHUPADA_APPEARANCE',
         payer_name: resolvedPayer,
         title: expenseTitle.trim(),
@@ -449,14 +451,11 @@ export const AppearanceDayPage: React.FC = () => {
               <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
                 Cost Amount (₹) *
               </label>
-              <input
-                type="number"
-                step="0.01"
+              <SignedAmountInput
+                value={expenseAmount}
+                onChange={setExpenseAmount}
                 required
                 placeholder="e.g. 3500"
-                value={expenseAmount}
-                onChange={e => setExpenseAmount(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white text-xs focus:ring-2 focus:ring-amber-500 outline-none font-semibold"
               />
             </div>
           </div>
