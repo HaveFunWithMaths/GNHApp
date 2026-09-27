@@ -44,7 +44,9 @@ import {
   getNextCycleMonth,
   formatExpenseDate,
   formatSubmissionDateTime,
+  getExpenseSubmissionMonth,
 } from '../utils/calculations';
+import { SignedAmountInput } from '../components/common/SignedAmountInput';
 import {
   normalizeFamilyMembers,
   getFamilyMemberNames,
@@ -141,13 +143,13 @@ export const AdminPage: React.FC = () => {
 
   const handleOpenDirectSettle = (s: DevoteeMonthlySummary) => {
     setSettlingDevotee(s);
-    if (s.settlement_reported > 0) {
+    if (s.settlement_reported !== 0) {
       setDirectSettleAmount(s.settlement_reported.toString());
-    } else if (s.final_balance > 0) {
+    } else if (s.final_balance !== 0) {
       setDirectSettleAmount(s.final_balance.toString());
     } else {
       const gross = s.prasadam_cost - s.approved_expenses + s.carried_forward;
-      setDirectSettleAmount(gross > 0 ? gross.toString() : '0');
+      setDirectSettleAmount(gross !== 0 ? gross.toString() : '0');
     }
     setDirectSettleDate(s.settlement_date_reported || new Date().toISOString().slice(0, 10));
     setDirectSettleNotes(s.settlement_status === 'SETTLED' ? 'Verified by Admin' : 'Settled via Admin Panel');
@@ -209,10 +211,9 @@ export const AdminPage: React.FC = () => {
     });
   }, [allDevoteeSummaries, searchTerm]);
 
-  // Helper to extract month strictly from Date of Expense (e.date or fallback created_at)
+  // Helper to extract month strictly from month submitted
   const getExpenseMonth = (e: Expense): string => {
-    const rawDate = e.date || (e.created_at ? e.created_at.slice(0, 10) : '');
-    return rawDate.slice(0, 7);
+    return getExpenseSubmissionMonth(e);
   };
 
   // Month-filtered expenses strictly for activeMonth based on Date of Expense
@@ -393,11 +394,11 @@ export const AdminPage: React.FC = () => {
     e.preventDefault();
     if (!settlingDevotee) return;
     const amountNum = parseFloat(directSettleAmount);
-    if (isNaN(amountNum) || amountNum <= 0) {
+    if (isNaN(amountNum) || amountNum === 0) {
       showToast({
         type: 'error',
         title: 'Invalid Amount',
-        message: 'Please enter a valid settlement amount greater than 0.',
+        message: 'Please enter a valid non-zero settlement amount.',
       });
       return;
     }
@@ -2881,13 +2882,11 @@ export const AdminPage: React.FC = () => {
             <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
               Settled Amount (₹)
             </label>
-            <input
-              type="number"
-              step="0.01"
-              required
+            <SignedAmountInput
               value={directSettleAmount}
-              onChange={e => setDirectSettleAmount(e.target.value)}
-              className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border rounded-xl font-bold text-lg"
+              onChange={setDirectSettleAmount}
+              required
+              placeholder="0.00"
             />
           </div>
 
@@ -3153,13 +3152,10 @@ export const AdminPage: React.FC = () => {
             <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
               Carry Forward Amount (₹) *
             </label>
-            <input
-              type="number"
-              step="any"
-              required
+            <SignedAmountInput
               value={carryForwardAmountInput}
-              onChange={e => setCarryForwardAmountInput(e.target.value)}
-              className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white font-mono text-sm focus:ring-2 focus:ring-amber-500 outline-none"
+              onChange={setCarryForwardAmountInput}
+              required
               placeholder="e.g. 1500 or -200"
             />
             <span className="text-[11px] text-slate-400 mt-1 block">

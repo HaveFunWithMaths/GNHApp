@@ -35,7 +35,9 @@ import {
   calculateMealsCost,
   formatExpenseDate,
   formatSubmissionDateTime,
+  getExpenseSubmissionMonth,
 } from '../utils/calculations';
+import { SignedAmountInput } from '../components/common/SignedAmountInput';
 import {
   getFamilyMemberNames,
   getPrimaryFamilyMemberName,
@@ -287,7 +289,14 @@ export const PrasadamPage: React.FC = () => {
     }
 
     const amountNum = parseFloat(expenseAmount);
-    if (isNaN(amountNum) || !expenseTitle.trim()) return;
+    if (isNaN(amountNum) || amountNum === 0 || !expenseTitle.trim()) {
+      showToast({
+        type: 'warning',
+        title: 'Invalid Amount or Title',
+        message: 'Please enter a valid non-zero expense amount and title.',
+      });
+      return;
+    }
 
     const defaultPayer = getDefaultPayer() || getPrimaryFamilyMemberName(activeDevotee) || guestName || 'Devotee';
     const resolvedPayer = payerName || defaultPayer;
@@ -313,6 +322,7 @@ export const PrasadamPage: React.FC = () => {
         billUrl = formatReceiptUrls(uploadedUrls);
       }
 
+      const submissionMonth = new Date().toISOString().slice(0, 7);
       await submitExpense({
         devotee_id: activeDevotee?.id || null,
         guest_name: activeDevotee ? null : guestName || 'Guest',
@@ -324,7 +334,7 @@ export const PrasadamPage: React.FC = () => {
         comments: expenseComments.trim() || null,
         bill_url: billUrl,
         status: 'PENDING',
-        cycle_month: expenseDate ? expenseDate.slice(0, 7) : activeMonth,
+        cycle_month: submissionMonth,
       });
 
       // Reset form
@@ -339,11 +349,11 @@ export const PrasadamPage: React.FC = () => {
     }
   };
 
-  // Filter regular expenses for this devotee/guest
+  // Filter regular expenses for this devotee/guest (based strictly on month submitted)
   const regularExpenses: Expense[] = expenses.filter(
     (e: Expense) =>
       (activeDevotee ? e.devotee_id === activeDevotee.id : (guestName ? e.guest_name === guestName : true)) &&
-      (e.cycle_month === activeMonth || (e.date && e.date.startsWith(activeMonth))) &&
+      getExpenseSubmissionMonth(e) === activeMonth &&
       e.type === 'REGULAR'
   );
 
@@ -846,14 +856,11 @@ export const PrasadamPage: React.FC = () => {
               <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1.5">
                 Cost Amount (₹) *
               </label>
-              <input
-                type="number"
-                step="0.01"
+              <SignedAmountInput
+                value={expenseAmount}
+                onChange={setExpenseAmount}
                 required
                 placeholder="e.g. 1450"
-                value={expenseAmount}
-                onChange={e => setExpenseAmount(e.target.value)}
-                className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-amber-500 outline-none font-semibold"
               />
             </div>
           </div>

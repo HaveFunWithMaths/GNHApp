@@ -2,7 +2,7 @@ import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { DevoteeMonthlySummary, PrasadamCount, Expense } from '../types';
-import { formatRupee, formatMonthName } from './calculations';
+import { formatRupee, formatMonthName, getExpenseSubmissionMonth } from './calculations';
 import { formatDevoteeFamilyDisplay } from './devoteeHelpers';
 import { parseReceiptUrls } from './receiptHelpers';
 
@@ -66,13 +66,10 @@ export function exportToExcel(
   const wsCounts = XLSX.utils.json_to_sheet(monthCounts);
   XLSX.utils.book_append_sheet(wb, wsCounts, 'Daily Counts');
 
-  // Sheet 3: Regular Monthly Expenses (filtered strictly by Date of Expense)
+  // Sheet 3: Regular Monthly Expenses (filtered strictly by month submitted)
   const regularExpenseData = allExpenses
     .filter(e => e.type === 'REGULAR')
-    .filter(e => {
-      const expDate = e.date || (e.created_at ? e.created_at.slice(0, 10) : '');
-      return expDate.startsWith(cycleMonth);
-    })
+    .filter(e => getExpenseSubmissionMonth(e) === cycleMonth)
     .map(e => {
       const receiptCount = parseReceiptUrls(e.bill_url).length;
       return {

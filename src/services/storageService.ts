@@ -1,7 +1,7 @@
 import { Devotee, PrasadamCount, Expense, ExpenseStatus, ExpenseType, MonthlyLedger } from '../types';
 import { INITIAL_DEVOTEES } from '../data/seedDevotees';
 import { supabase, isSupabaseConfigured, isLocalDataMode, getDataEnvironmentInfo } from './supabase';
-import { calculateDevoteeMaxCounts, getAllDatesInMonth } from '../utils/calculations';
+import { calculateDevoteeMaxCounts, getAllDatesInMonth, getExpenseSubmissionMonth } from '../utils/calculations';
 import { normalizeFamilyMembers } from '../utils/devoteeHelpers';
 import { fileToBase64 } from '../utils/imageCompressor';
 
@@ -539,7 +539,7 @@ class StorageService {
     });
     if (cycleMonth) {
       return normalized.filter(
-        e => e.cycle_month === cycleMonth || (e.date && e.date.startsWith(cycleMonth)) || e.type === 'JANMASHTAMI' || e.type === 'PRABHUPADA_APPEARANCE'
+        e => getExpenseSubmissionMonth(e) === cycleMonth || e.type === 'JANMASHTAMI' || e.type === 'PRABHUPADA_APPEARANCE'
       );
     }
     return normalized;
@@ -548,14 +548,16 @@ class StorageService {
   async saveExpense(expense: Omit<Expense, 'id' | 'created_at'> & { id?: string }): Promise<Expense> {
     const allExpenses = await this.getExpenses();
     const expenseDate = expense.date || new Date().toISOString().slice(0, 10);
-    const cycleMonth = expense.cycle_month || expenseDate.slice(0, 7);
+    const createdAt = (expense as any).created_at || new Date().toISOString();
+    const submissionMonth = createdAt.slice(0, 7);
+    const cycleMonth = expense.cycle_month || submissionMonth;
 
     const newExpense: Expense = {
       ...expense,
       id: expense.id || generateUUID(),
       date: expenseDate,
       cycle_month: cycleMonth,
-      created_at: new Date().toISOString(),
+      created_at: createdAt,
       status: expense.status || 'PENDING',
     };
 
